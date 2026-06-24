@@ -1,0 +1,175 @@
+{
+	"categories" : 
+	[
+		{
+			"always_available" : true,
+			"description" : "\u041f\u043e\u0432\u0441\u044f\u043a\u0434\u0435\u043d\u043d\u0456 \u043c\u0430\u0442\u0435\u0440\u0456\u0430\u043b\u0438",
+			"icon" : "default_wood.png",
+			"id" : 1.0,
+			"items" : 
+			[
+				{
+					"max_per_day" : 64.0,
+					"name" : "default:wood",
+					"price" : 5.0
+				},
+				{
+					"max_per_day" : 99.0,
+					"name" : "default:cobble",
+					"price" : 2.0
+				},
+				{
+					"max_per_day" : 99.0,
+					"name" : "default:dirt",
+					"price" : 1.0
+				},
+				{
+					"max_per_day" : 64.0,
+					"name" : "default:sand",
+					"price" : 3.0
+				},
+				{
+					"max_per_day" : 64.0,
+					"name" : "default:gravel",
+					"price" : 2.0
+				},
+				{
+					"max_per_day" : 32.0,
+					"name" : "default:clay_lump",
+					"price" : 8.0
+				}
+			],
+			"name" : "\u0411\u0430\u0437\u043e\u0432\u0456 \u0440\u0435\u0441\u0443\u0440\u0441\u0438"
+		},
+		{
+			"always_available" : false,
+			"description" : "\u0417'\u044f\u0432\u043b\u044f\u044e\u0442\u044c\u0441\u044f \u0432\u0438\u043f\u0430\u0434\u043a\u043e\u0432\u043e",
+			"icon" : "default_steel_ingot.png",
+			"id" : 2.0,
+			"items" : 
+			[
+				{
+					"max_per_day" : 32.0,
+					"name" : "default:coal_lump",
+					"price" : 10.0
+				},
+				{
+					"max_per_day" : 16.0,
+					"name" : "default:iron_lump",
+					"price" : 25.0
+				},
+				{
+					"max_per_day" : 16.0,
+					"name" : "default:copper_lump",
+					"price" : 20.0
+				},
+				{
+					"max_per_day" : 16.0,
+					"name" : "default:tin_lump",
+					"price" : 18.0
+				},
+				{
+					"max_per_day" : 8.0,
+					"name" : "default:gold_lump",
+					"price" : 50.0
+				},
+				{
+					"max_per_day" : 5.0,
+					"name" : "default:diamond",
+					"price" : 100.0
+				},
+				{
+					"max_per_day" : 8.0,
+					"name" : "default:mese_crystal",
+					"price" : 80.0
+				}
+			],
+			"name" : "\u0420\u0443\u0434\u0438 \u0442\u0430 \u043c\u0435\u0442\u0430\u043b\u0438"
+		},
+		{
+			"always_available" : false,
+			"description" : "\u0407\u0436\u0430 \u0442\u0430 \u0440\u043e\u0441\u043b\u0438\u043d\u0438",
+			"icon" : "default_apple.png",
+			"id" : 3.0,
+			"items" : 
+			[
+				{
+					"max_per_day" : 32.0,
+					"name" : "farming:bread",
+					"price" : 15.0
+				},
+				{
+					"max_per_day" : 48.0,
+					"name" : "farming:cotton",
+					"price" : 8.0
+				},
+				{
+					"max_per_day" : 64.0,
+					"name" : "farming:wheat",
+					"price" : 6.0
+				},
+				{
+					"max_per_day" : 32.0,
+					"name" : "farming:carrot",
+					"price" : 12.0
+				},
+				{
+					"max_per_day" : 32.0,
+					"name" : "farming:potato",
+					"price" : 10.0
+				},
+				{
+					"max_per_day" : 24.0,
+					"name" : "farming:tomato",
+					"price" : 14.0
+				},
+				{
+					"max_per_day" : 40.0,
+					"name" : "farming:apple",
+					"price" : 8.0
+				}
+			],
+			"name" : "\u0424\u0435\u0440\u043c\u0435\u0440\u0441\u0442\u0432\u043e"
+		},
+		{
+			"always_available" : false,
+			"description" : "\u0414\u0443\u0436\u0435 \u0440\u0456\u0434\u043a\u0456\u0441\u043d\u0456 \u043f\u0440\u0435\u0434\u043c\u0435\u0442\u0438",
+			"icon" : "default_mese_crystal.png",
+			"id" : 4.0,
+			"items" : 
+			[
+				{
+					"max_per_day" : 2.0,
+					"name" : "default:mese",
+					"price" : 500.0
+				},
+				{
+					"max_per_day" : 1.0,
+					"name" : "default:diamondblock",
+					"price" : 800.0
+				},
+				{
+					"max_per_day" : 2.0,
+					"name" : "default:goldblock",
+					"price" : 400.0
+				},
+				{
+					"max_per_day" : 3.0,
+					"name" : "default:steelblock",
+					"price" : 200.0
+				},
+				{
+					"max_per_day" : 5.0,
+					"name" : "default:obsidian",
+					"price" : 150.0
+				},
+				{
+					"max_per_day" : 4.0,
+					"name" : "default:meselamp",
+					"price" : 120.0
+				}
+			],
+			"name" : "\u0420\u0456\u0434\u043a\u0456\u0441\u043d\u0435"
+		}
+	]
+}

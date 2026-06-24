@@ -1,0 +1,2 @@
+tables_chairs.enable_sitting (Enable sitting) bool true
+tables_chairs.globalstep (Enable globalstep) bool true

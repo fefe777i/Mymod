@@ -1,0 +1,304 @@
+[
+
+
+  {
+
+
+    "id": "wald",
+
+
+    "name": "Вальдхар",
+
+
+    "preview": "wald.png",
+
+
+    "icon": "wald_icon.png",
+
+
+    "lvl0": "wald_0.png",
+
+
+    "lvl10": "wald_10.png",
+
+
+    "lvl20": "wald_20.png",
+
+
+    "lvl30": "wald_30.png",
+
+
+    "lvl40": "wald_40.png",
+
+
+    "lvl50": "wald_50.png"
+
+
+  },
+
+
+  {
+
+
+    "id": "Hitler",
+
+
+    "name": "Адольф дівчина",
+
+
+    "preview": "Hitler.png",
+
+
+    "icon": "Hitler_icon.png",
+
+
+    "lvl0": "Hitler_0.png",
+
+
+    "lvl10": "Hitler_10.png",
+
+
+    "lvl20": "Hitler_20.png",
+
+
+    "lvl30": "Hitler_30.png",
+
+
+    "lvl40": "Hitler_40.png",
+
+
+    "lvl50": "Hitler_50.png"
+
+
+  },
+
+
+  {
+
+
+    "id": "torment",
+
+
+    "name": "Мучання",
+
+
+    "preview": "torment.png",
+
+
+    "icon": "torment_icon.png",
+
+
+    "lvl0": "torment_0.png",
+
+
+    "lvl10": "torment_10.png",
+
+
+    "lvl20": "torment_20.png",
+
+
+    "lvl30": "torment_30.png",
+
+
+    "lvl40": "torment_40.png",
+
+
+    "lvl50": "torment_50.png"
+
+
+  },
+
+
+  {
+
+
+    "id": "parat",
+
+
+    "name": "папуга",
+
+
+    "preview": "pp.png",
+
+
+    "icon": "parat_icon.png",
+
+
+    "lvl0": "pp_0.png",
+
+
+    "lvl10": "pp_10.png",
+
+
+    "lvl20": "pp_20.png",
+
+
+    "lvl30": "pp_30.png",
+
+
+    "lvl40": "pp_40.png",
+
+
+    "lvl50": "pp_50.png"
+
+
+  },
+
+
+  {
+
+
+    "id": "black",
+
+
+    "name": "чорний",
+
+
+    "preview": "bb.png",
+
+
+    "icon": "black_icon.png",
+
+
+    "lvl0": "bb_0.png",
+
+
+    "lvl10": "bb_10.png",
+
+
+    "lvl20": "bb_20.png",
+
+
+    "lvl30": "bb_30.png",
+
+
+    "lvl40": "bb_40.png",
+
+
+    "lvl50": "bb_50.png"
+
+
+  },
+
+
+  {
+
+
+    "id": "pickme",
+
+
+    "name": "пикси",
+
+
+    "preview": "pic.png",
+
+
+    "icon": "pickme_icon.png",
+
+
+    "lvl0": "pic_0.png",
+
+
+    "lvl10": "pic_10.png",
+
+
+    "lvl20": "pic_20.png",
+
+
+    "lvl30": "pic_30.png",
+
+
+    "lvl40": "pic_40.png",
+
+
+    "lvl50": "pic_50.png"
+
+
+  },
+
+
+  {
+
+
+    "id": "Cap",
+
+
+    "name": "Кепка",
+
+
+    "preview": "Cap.png",
+
+
+    "icon": "Cap_icon.png",
+
+
+    "lvl0": "Cap_0.png",
+
+
+    "lvl10": "Cap_10.png",
+
+
+    "lvl20": "Cap_20.png",
+
+
+    "lvl30": "Cap_30.png",
+
+
+    "lvl40": "Cap_40.png",
+
+
+    "lvl50": "Cap_50.png"
+
+
+  },
+
+
+  {
+
+
+    "id": "new",
+
+
+    "name": "Сучасність",
+
+
+    "preview": "new.png",
+
+
+    "icon": "new_icon.png",
+
+
+    "lvl0": "new_0.png",
+
+
+    "lvl10": "new_10.png",
+
+
+    "lvl20": "new_20.png",
+
+
+    "lvl30": "new_30.png",
+
+
+    "lvl40": "new_40.png",
+
+
+    "lvl50": "new_50.png"
+
+
+  },
+
+
+  {
+    "id": "blue",
+    "name": "блюстоунер",
+    "preview": "blue.png",
+    "icon": "blue_icon.png",
+    "lvl0": "blue_0.png",
+    "lvl10": "blue_10.png",
+    "lvl20": "blue_20.png",
+    "lvl30": "blue_30.png",
+    "lvl40": "blue_40.png",
+    "lvl50": "blue_50.png"
+  }
+]
