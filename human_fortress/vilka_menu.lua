@@ -11,9 +11,9 @@ function show_vilka_menu(player_name)
         "image[0,0;16,9;hf_hud_bg.png]" ..
         
         -- 3. КНОПКИ:
-        "button[1.5,5.8;3.5,1;words_menu;ПОЗНАЧЕННЯ]" .. 
+        "button[1.5,5.8;3.5,1;upgrade_menu;ПОЗНАЧЕННЯ]" .. 
         "button[6.2,5.2;3.6,1;world_menu;СВІТ]" ..
-        "button[11.0,5.8;3.5,1;upgrade_menu;Я]" ..
+        "button[11.0,5.8;3.5,1;words_menu;Я]" ..
         "button[4.8,6.8;6.4,1.5;command_mode;РЕЖИМ КОНТРОЛЮ]"
 
     minetest.show_formspec(player_name, "human_fortress:vilka", formspec)

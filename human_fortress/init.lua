@@ -106,7 +106,6 @@ dofile(path .. "/time.lua")
 dofile(path .. "/node.lua")
 dofile(path .. "/shop.lua")
 dofile(path .. "/edos.lua")
-dofile(path .. "/hitbox.lua")
 dofile(path .. "/vilka_core.lua")
 dofile(path .. "/vilka_menu.lua")
 dofile(path .. "/upgrades.lua")
@@ -323,22 +322,78 @@ end)
 minetest.register_on_leaveplayer(function(player)
     chat_huds[player:get_player_name()] = nil
 end)
+
+
+--===========
+--ЧАС
+--===========
+-- Таблиця для часу (зберігаємо значення в секундах від 0 до 1439)
+local player_hf_times = {}
+local is_time_running = {} -- Таблиця для керування паузою
+
+-- Функція для запуску/зупинки часу для гравця
+function set_hf_time_running(player_name, state)
+    is_time_running[player_name] = state
+end
+
+minetest.register_on_joinplayer(function(player)
+    local name = player:get_player_name()
+    local meta = player:get_meta()
+    
+    -- Завантажуємо збережений час (за замовчуванням 13:00 = 780 хв)
+    player_hf_times[name] = meta:get_int("hf_time_stored")
+    if player_hf_times[name] == 0 then player_hf_times[name] = 780 end
+    
+    -- За замовчуванням час йде, коли гравець в грі
+    is_time_running[name] = true 
+end)
+
+minetest.register_on_leaveplayer(function(player)
+    local name = player:get_player_name()
+    player:get_meta():set_int("hf_time_stored", player_hf_times[name])
+    player_hf_times[name] = nil
+    is_time_running[name] = nil
+end)
+
+-- Основний цикл: час рухається ТІЛЬКИ якщо is_time_running == true
+minetest.register_globalstep(function(dtime)
+    for _, player in ipairs(minetest.get_connected_players()) do
+        local name = player:get_player_name()
+        
+        if is_time_running[name] then
+            -- Час йде. Щоб 24 години = 24 хвилини, 
+            -- нам треба щоб 1 реальна секунда була 1 ігровою хвилиною.
+            -- dtime - це час у секундах між кадрами.
+            player_hf_times[name] = (player_hf_times[name] + dtime) % 1440
+        end
+    end
+end)
 -- ============================================
 -- НЕБО
 -- ============================================
+-- ============================================
+-- НЕБО (на базі hf_time)
+-- ============================================
 
 local function update_sky(player)
-    local time = minetest.get_timeofday() * 24
+    local name = player:get_player_name()
+    local hf_time_minutes = player_hf_times[name] or 780 -- Беремо час гравця
+    
+    -- Переводимо хвилини в години для легкого порівняння (0.0 - 24.0)
+    local hours = hf_time_minutes / 60
+    
     local skybox
-    if time >= 18 then
-        skybox = "evening"
-    elseif time < 5 then
+    -- Ваш графік: День 5:00-22:00, Ніч 22:01-4:49
+    if hours >= 22 or hours < 5 then
         skybox = "night"
-    elseif time < 13 then
+    elseif hours >= 5 and hours < 10 then -- Ранок (додайте свій діапазон)
         skybox = "morning"
+    elseif hours >= 18 and hours < 22 then -- Вечір
+        skybox = "evening"
     else
         skybox = "day"
     end
+    
     player:set_sky({
         type = "skybox",
         textures = {
@@ -355,10 +410,11 @@ local function update_sky(player)
     })
 end
 
+-- Оновлення тепер використовує наш hf_time
 local sky_timer = 0
 minetest.register_globalstep(function(dtime)
     sky_timer = sky_timer + dtime
-    if sky_timer >= 10 then
+    if sky_timer >= 5 then -- Оновлюємо кожні 5 сек, щоб небо змінювалось плавніше
         sky_timer = 0
         for _, player in ipairs(minetest.get_connected_players()) do
             update_sky(player)
@@ -571,29 +627,16 @@ minetest.register_on_player_hpchange(function(player, hp_change, reason)
     end)
 end)
 
-minetest.register_chatcommand("camera", {
-    params = "free/first/third",
-    privs = {server = true},
-    func = function(name, param)
-        local player = minetest.get_player_by_name(name)
-        if not player then return end
-        
-        if param == "free" then
-            player:set_camera({mode = "free"})
-        elseif param == "first" then
-            player:set_camera({mode = "first"})
-        elseif param == "third" then
-            player:set_camera({mode = "third"})
-        end
-    end
-})
+
 
 -- Використовуємо метод для кожного гравця окремо при вході
-minetest.register_on_joinplayer(function(player)
-    local style = "style_type[button,image_button,item_image_button;bgimg=my_button.png;bgimg_middle=4,4;border=false]"
-    local background = "bgcolor[#00000000;true]background9[0,0;1,1;my1bg1.png;true;8]"
+--minetest.register_on_joinplayer(function(player)
+--    local style = "style_type[button,image_button,item_image_button;bgimg=my_button.png;bgimg_middle=4,4;border=false]"
+core.register_on_joinplayer(function(player)
+    player:set_formspec_prepend("background9[0,0;0,0;bg_common.png;true;40,40,-40,-40]")
+end)
     
     -- Встановлюємо препенд безпосередньо для об'єкта гравця
-    player:set_formspec_prepend(style .. background)
-end)
+--    player:set_formspec_prepend(style .. background)
+--end)
 print("[Human Fortress RTS] Усі компоненти завантажено!")

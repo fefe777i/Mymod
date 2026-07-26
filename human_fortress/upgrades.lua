@@ -815,10 +815,10 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
     local moved = false
     
     if fields.scroll_left then
-        scroll_x = scroll_x + 0.5
+        scroll_x = scroll_x - 0.5
         moved = true
     elseif fields.scroll_right then
-        scroll_x = scroll_x - 0.5
+        scroll_x = scroll_x + 0.5
         moved = true
     elseif fields.scroll_up then
         scroll_y = scroll_y - 0.5

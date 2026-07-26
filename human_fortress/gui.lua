@@ -1,21 +1,38 @@
 -------------------------------------------------
 -- Human Fortress RTS - HUD та Інтерфейс
 -------------------------------------------------
+minetest.register_on_joinplayer(function(player)
+    -- Даємо невелику затримку, щоб дані гравця встигли завантажитися з бази
+    minetest.after(0.5, function()
+        if player and player:is_player() then
+            human_fortress.update_player_model(player)
+        end
+    end)
+end)
 
 -- 0. Функція зміни моделі гравця залежно від рівня
 function human_fortress.update_player_model(player)
     if not player or not player:is_player() then return end
     local name = player:get_player_name()
     local data = human_fortress.edos_data[name]
-    if not data then return end
-
-    local level = data.level or 1
-    local model = "character.b3d" 
-    local texture = "character.png"
-    local e_height = 1.62
-    local visual_size = 1
-
-    if level >= 0 and level < 10 then
+    
+    -- Якщо даних взагалі немає, вважаємо, що це нульовий/перший рівень
+    local level = 0
+    if data and data.level then
+        level = data.level
+    end
+    
+    -- Тепер логіка працюватиме стабільно:
+    local model, texture, e_height, visual_size
+    
+    if level == 0 then
+        -- Спеціальна логіка для 0 рівня
+        model = "player_lvl_0.obj"
+        texture = "player_lvl_0.png"
+        e_height = 1
+        visual_size = 8.0
+    elseif level >= 1 and level < 10 then
+        -- ... і так далі
         model = "player_lvl_0.obj"
         texture = "player_lvl_0.png"
         e_height = 1

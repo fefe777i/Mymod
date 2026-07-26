@@ -4,6 +4,7 @@
 
 local cmd_mode = {}
 local storage = minetest.get_mod_storage()
+local exit_command_mode -- forward declaration, визначається нижче
 
 local function save_cmd_mode(name)
     if cmd_mode[name] then
@@ -21,79 +22,167 @@ local function load_cmd_mode(name)
 end
 
 -- ============================================
--- РЕЄСТРАЦІЯ НОДІВ-ГОЛОГРАМ ДЛЯ КОЖНОЇ БУДІВЛІ
--- Кожна будівля має свій унікальний блок-прев'ю.
--- Ти сам робиш текстури: human_fortress_preview_<тип>.png
+-- ДАНІ ПРО БУДІВЛІ (без кастомних моделей-голограм!)
+-- Прев'ю тепер малюється на клієнті через фантомні блоки (ghost nodes),
+-- тому НЕ потрібно робити .obj/.png для кожної будівлі окремо.
+-- Просто вкажи, яким існуючим блоком показувати прев'ю для кожного типу.
 -- ============================================
 
--- Кожна будівля має:
---   mesh  = назва .obj файлу в папці models/  (ти робиш сам)
---   tiles = текстура для mesh (ти робиш сам)
---   label = назва в меню
---
--- Структура файлів:
---   mods/human_fortress/models/human_fortress_preview_barracks.obj
---   mods/human_fortress/textures/human_fortress_preview_barracks.png
---   ... і так для кожної будівлі
-
 local BUILDING_PREVIEWS = {
-    townhall = {
-        label = "🏛️ Ратуша",
-        mesh  = "human_fortress_preview_townhall.obj",
-        icon  = "human_fortress_preview_townhall.png",
+    townhall = { label = "🏛️ Ратуша",  preview_node = "default:brick" },
+    farm     = { label = "🌾 Ферма",   preview_node = "default:dirt_with_grass" },
+    barracks = { label = "⚔️ Казарми", preview_node = "default:stonebrick" },
+    wall     = { label = "🧱 Стіна",   preview_node = "default:stonebrick" },
+    tower    = { label = "🗼 Вежа",    preview_node = "default:stone" },
+    house    = { label = "🏠 Дім",     preview_node = "default:wood" },
+    market   = { label = "🏪 Ринок",   preview_node = "default:junglewood" },
+}
+-- ^ Заміни preview_node на будь-який реальний зареєстрований нод, який
+--   виглядає доречно для конкретної будівлі (можна навіть використати
+--   головний матеріал зі схеми будівлі, якщо знаєш його).
+
+-- ============================================
+-- МІСТ ДО КЛІЄНТА: MOD CHANNEL ДЛЯ ФАНТОМНИХ БЛОКІВ
+-- Сервер НЕ може напряму викликати core.set_ghost_node (це CSM-функція,
+-- вона існує лише в клієнтських модах). Тому сервер надсилає повідомлення
+-- через mod channel, а окремий клієнтський мод (CSM) його приймає і сам
+-- викликає core.set_ghost_node/clear_ghost_nodes.
+-- Дивись файл human_fortress_ghost_csm/init.lua - його треба покласти
+-- в ТЕКУ КЛІЄНТСЬКИХ МОДІВ (client-side mods), а не в звичайні mods/!
+-- ============================================
+
+-- ============================================
+-- ФАНТОМНИЙ БЛОК ЧЕРЕЗ ENTITY (visual = "wielditem")
+-- Той самий спосіб, яким рендеряться викинуті предмети - надійний,
+-- вбудований, не потребує ані CSM, ані змін в рушії.
+-- Кубічний нод виглядає ІДЕНТИЧНО реальному блоку такого типу.
+-- ============================================
+
+minetest.register_entity("human_fortress:ghost_preview", {
+    initial_properties = {
+        visual = "wielditem",
+        wield_item = "air",
+        visual_size = { x = 1.0, y = 1.0 }, -- 1.0 = повний розмір ноду (не як у викинутого предмета 0.4)
+        physical = false,
+        collide_with_objects = false,
+        pointable = false,
+        static_save = false, -- не зберігати між рестартами світу
+        glow = 6,
+        color = "#FFFFFF9A", -- спроба напівпрозорості (може не спрацювати на всіх типах нодів)
     },
-    farm = {
-        label = "🌾 Ферма",
-        mesh  = "human_fortress_preview_farm.obj",
-        icon  = "human_fortress_preview_farm.png",
-    },
-    barracks = {
-        label = "⚔️ Казарми",
-        mesh  = "human_fortress_preview_barracks.obj",
-        icon  = "human_fortress_preview_barracks.png",
-    },
-    wall = {
-        label = "🧱 Стіна",
-        mesh  = "human_fortress_preview_wall.obj",
-        icon  = "human_fortress_preview_wall.png",
-    },
-    tower = {
-        label = "🗼 Вежа",
-        mesh  = "human_fortress_preview_tower.obj",
-        icon  = "human_fortress_preview_tower.png",
-    },
-    house = {
-        label = "🏠 Дім",
-        mesh  = "human_fortress_preview_house.obj",
-        icon  = "human_fortress_preview_house.png",
-    },
-    market = {
-        label = "🏪 Ринок",
-        mesh  = "human_fortress_preview_market.obj",
-        icon  = "human_fortress_preview_market.png",
-    },
+    on_activate = function(self)
+        self.object:set_armor_groups({ immortal = 1 })
+    end,
+})
+
+-- ============================================
+-- ХУД-КНОПКИ ЗАМІСТЬ ХОТБАРУ (сенсорні кнопки)
+-- Потребує рушій з touchable HUD (workshop47 fork)
+-- ============================================
+
+local MAIN_BUTTONS = {
+    {key = "select",  tool = "human_fortress:cmd_select",  icon = "human_fortress_cmd_select.png"},
+    {key = "move",    tool = "human_fortress:cmd_move",    icon = "human_fortress_cmd_move.png"},
+    {key = "gather",  tool = "human_fortress:cmd_gather",  icon = "human_fortress_cmd_gather.png"},
+    {key = "build",   tool = "human_fortress:cmd_build",   icon = "human_fortress_cmd_build.png"},
+    {key = "attack",  tool = "human_fortress:cmd_attack",  icon = "human_fortress_cmd_attack.png"},
+    {key = "enter",   tool = "human_fortress:cmd_enter",   icon = "human_fortress_cmd_enter.png"},
+    {key = "repair",  tool = "human_fortress:cmd_repair",  icon = "human_fortress_cmd_repair.png"},
+    {key = "destroy", tool = "human_fortress:cmd_destroy", icon = "human_fortress_cmd_destroy.png"},
+    {key = "exit",    tool = "human_fortress:cmd_exit",    icon = "human_fortress_cmd_exit.png"},
 }
 
--- Реєструємо нод-голограму для кожної будівлі
-for btype, bdata in pairs(BUILDING_PREVIEWS) do
-    minetest.register_node("human_fortress:preview_" .. btype, {
-        description = "Голограма: " .. bdata.label,
-        drawtype = "mesh",
-        mesh = bdata.mesh,          -- твій .obj файл
-        tiles = { bdata.icon },     -- твоя текстура
-        paramtype = "light",
-        paramtype2 = "facedir",     -- підтримує поворот на 0/90/180/270°
-        sunlight_propagates = true,
-        walkable = false,           -- крізь неї можна ходити
-        pointable = true,           -- можна клікати
-        diggable = false,
-        buildable_to = false,
-        light_source = 6,
-        use_texture_alpha = "blend", -- напівпрозорість якщо текстура має alpha
-        groups = { not_in_creative_inventory = 1 },
-        on_dig = function() return false end,
-    })
+local BUILD_BUTTONS = {
+    {key = "b_move",    tool = "human_fortress:build_move",    icon = "human_fortress_cmd_move.png"},
+    {key = "b_rotate",  tool = "human_fortress:build_rotate",  icon = "human_fortress_cmd_select.png"},
+    {key = "b_confirm", tool = "human_fortress:build_confirm", icon = "human_fortress_cmd_build.png"},
+    {key = "b_cancel",  tool = "human_fortress:build_cancel",  icon = "human_fortress_cmd_exit.png"},
+}
+
+local BUTTON_LOOKUP = {}
+for _, b in ipairs(MAIN_BUTTONS) do BUTTON_LOOKUP[b.key] = b end
+for _, b in ipairs(BUILD_BUTTONS) do BUTTON_LOOKUP[b.key] = b end
+
+local function clear_hud_buttons(player)
+    local name = player:get_player_name()
+    local data = cmd_mode[name]
+    if not data or not data.hud_buttons then return end
+    for _, id in pairs(data.hud_buttons) do
+        player:hud_remove(id)
+    end
+    data.hud_buttons = {}
 end
+
+local function show_hud_buttons(player, button_list)
+    local name = player:get_player_name()
+    if not cmd_mode[name] then return end
+    clear_hud_buttons(player)
+    cmd_mode[name].hud_buttons = {}
+
+    local count = #button_list
+    local spacing = 0.09
+    local start_x = 0.5 - (count - 1) * spacing / 2
+
+    for i, b in ipairs(button_list) do
+        local id = player:hud_add({
+            hud_elem_type = "image",
+            type = "image",
+            text = b.icon,
+            position = {x = start_x + (i - 1) * spacing, y = 0.93},
+            scale = {x = 3.5, y = 3.5},
+            alignment = {x = 0, y = 0},
+            name = "hf_btn_" .. b.key,
+            touchable = true,
+            z_index = 100,
+        })
+        cmd_mode[name].hud_buttons[b.key] = id
+    end
+end
+
+local function select_tool(player, tool_name)
+    local inv = player:get_inventory()
+    local idx = player:get_wield_index()
+    inv:set_stack("main", idx, tool_name .. " 1")
+end
+
+core.register_on_hud_touch(function(player, hud_element_name)
+    local key = hud_element_name:match("^hf_btn_(.+)$")
+    if not key then return end
+    local b = BUTTON_LOOKUP[key]
+    if not b then return end
+
+    local name = player:get_player_name()
+    if not cmd_mode[name] then return end
+
+    if b.tool == "human_fortress:cmd_exit" then
+        exit_command_mode(player)
+        return
+    end
+
+    -- Кнопки, що виконуються одразу (не потребують націлювання)
+    if b.tool == "human_fortress:build_confirm" then
+        select_tool(player, b.tool)
+        local def = minetest.registered_tools[b.tool]
+        if def and def.on_use then def.on_use(player:get_wielded_item(), player) end
+        return
+    end
+    if b.tool == "human_fortress:build_cancel" then
+        select_tool(player, b.tool)
+        local def = minetest.registered_tools[b.tool]
+        if def and def.on_use then def.on_use(player:get_wielded_item(), player) end
+        return
+    end
+    if b.tool == "human_fortress:build_rotate" then
+        select_tool(player, b.tool)
+        local def = minetest.registered_tools[b.tool]
+        if def and def.on_place then def.on_place(player:get_wielded_item(), player, nil) end
+        return
+    end
+
+    -- Кнопки, що потребують націлювання: озброюємо і чекаємо на тап по екрану
+    select_tool(player, b.tool)
+    minetest.chat_send_player(name, "🎯 Вибрано: " .. key .. " — тапни по цілі на екрані")
+end)
 
 -- ============================================
 -- ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ ЮНІТІВ
@@ -114,53 +203,157 @@ end
 
 -- ============================================
 -- СИСТЕМА ПРЕВ'Ю: ПОСТАВИТИ / ПРИБРАТИ / ПЕРЕМІСТИТИ
+-- Тепер це суто клієнтський фантом - сервер лише повідомляє клієнта,
+-- що і де показати. Мапа сервера НІКОЛИ не змінюється прев'ю-блоками.
 -- ============================================
 
--- Прибрати голограму гравця зі світу
+-- ============================================
+-- ЧИТАННЯ СХЕМИ Й ПОКАЗ УСІХ ЇЇ БЛОКІВ ЯК ФАНТОМІВ
+-- ============================================
+
+-- Підбери ці два числа під свою збірку дослідним шляхом:
+local GHOST_VISUAL_SIZE = 1.0   -- 1.0 = "нібито повний блок"; зменш якщо завеликий
+local GHOST_POS_OFFSET  = 0.5   -- зсув до центру ноду; постав 0, якщо фантоми "між блоків"
+
+local SCHEMATIC_CACHE = {}
+
+local function get_schematic_data(building_type)
+    if SCHEMATIC_CACHE[building_type] ~= nil then
+        return SCHEMATIC_CACHE[building_type]
+    end
+    local schematic = BUILDING_SCHEMATICS and BUILDING_SCHEMATICS[building_type]
+    if not schematic then
+        SCHEMATIC_CACHE[building_type] = false
+        return false
+    end
+    local filepath = minetest.get_modpath("human_fortress") .. "/schematics/" .. schematic.schematic
+    local data = minetest.read_schematic(filepath, {})
+    SCHEMATIC_CACHE[building_type] = data or false
+    return SCHEMATIC_CACHE[building_type]
+end
+
+-- Повертає {x_out, z_out} з урахуванням повороту навколо Y - та сама
+-- математика, яку рушій використовує в minetest.place_schematic, щоб
+-- фантом точно збігався з реальним результатом будівництва.
+local function rotate_xz(x, z, sx, sz, rotation)
+    if rotation == 90 then
+        return z, sx - 1 - x
+    elseif rotation == 180 then
+        return sx - 1 - x, sz - 1 - z
+    elseif rotation == 270 then
+        return sz - 1 - z, x
+    end
+    return x, z
+end
+
+-- Повертає список { {pos=v3s16, node=name}, ... } - усі реальні (не
+-- air/ignore) блоки схеми, вже зі зміщенням pos і врахованим поворотом.
+local function get_ghost_blocks(building_type, anchor_pos, rotation)
+    local data = get_schematic_data(building_type)
+    if not data then return {} end
+
+    local sx, sy, sz = data.size.x, data.size.y, data.size.z
+    local blocks = {}
+
+    local i = 1 -- Lua-таблиці 1-індексовані
+    for z = 0, sz - 1 do
+        for y = 0, sy - 1 do
+            for x = 0, sx - 1 do
+                local cell = data.data[i]
+                i = i + 1
+                if cell and cell.name ~= "air" and cell.name ~= "ignore" then
+                    local prob = cell.prob or cell.param1 or 255
+                    if prob > 1 then -- 0 і 1 = блок ніколи не з'явиться
+                        local ox, oz = rotate_xz(x, z, sx, sz, rotation)
+                        table.insert(blocks, {
+                            pos = {
+                                x = anchor_pos.x + ox,
+                                y = anchor_pos.y + y,
+                                z = anchor_pos.z + oz,
+                            },
+                            node = cell.name,
+                        })
+                    end
+                end
+            end
+        end
+    end
+
+    return blocks
+end
+
+-- Прибрати всі фантомні блоки гравця
 local function clear_preview(player_name)
     local pdata = cmd_mode[player_name]
-    if not pdata or not pdata.preview_pos then return end
-    local cur = minetest.get_node(pdata.preview_pos)
-    -- Видаляємо лише якщо це наш нод-голограма
-    if cur.name:find("^human_fortress:preview_") then
-        minetest.remove_node(pdata.preview_pos)
+    if not pdata then return end
+    if pdata.preview_objs then
+        for _, obj in ipairs(pdata.preview_objs) do
+            if obj and obj:is_valid() then
+                obj:remove()
+            end
+        end
     end
+    pdata.preview_objs = nil
     pdata.preview_pos = nil
 end
 
--- Поставити голограму на нову позицію
+-- Показати повний фантомний контур будівлі на новій позиції
 local function place_preview(player_name, pos)
     local pdata = cmd_mode[player_name]
     if not pdata or not pdata.build then return end
     local btype = pdata.build.selected_type
     if not btype then return end
 
-    -- Прибираємо стару голограму
-    clear_preview(player_name)
-
-    local preview_node = "human_fortress:preview_" .. btype
-    if not minetest.registered_nodes[preview_node] then
-        minetest.chat_send_player(player_name, "❌ Немає голограми для типу: " .. btype)
+    local binfo = BUILDING_PREVIEWS[btype]
+    if not binfo then
+        minetest.chat_send_player(player_name, "❌ Немає даних для типу: " .. btype)
         return
     end
 
-    -- Перевіряємо чи місце вільне
+    clear_preview(player_name)
+
+    local rotation = (pdata.build.rotation or 0) % 360
+    local blocks = get_ghost_blocks(btype, pos, rotation)
+
+    if #blocks == 0 then
+        -- Немає схеми (ще не зроблена) - показуємо хоча б один маркер
+        local center = {
+            x = pos.x + GHOST_POS_OFFSET,
+            y = pos.y + GHOST_POS_OFFSET,
+            z = pos.z + GHOST_POS_OFFSET,
+        }
+        local obj = minetest.add_entity(center, "human_fortress:ghost_preview")
+        if obj then
+            obj:set_properties({ wield_item = binfo.preview_node or "default:glass" })
+            pdata.preview_objs = { obj }
+        end
+    else
+        local objs = {}
+        for _, block in ipairs(blocks) do
+            local center = {
+                x = block.pos.x + GHOST_POS_OFFSET,
+                y = block.pos.y + GHOST_POS_OFFSET,
+                z = block.pos.z + GHOST_POS_OFFSET,
+            }
+            local obj = minetest.add_entity(center, "human_fortress:ghost_preview")
+            if obj then
+                obj:set_properties({ wield_item = block.node })
+                table.insert(objs, obj)
+            end
+        end
+        pdata.preview_objs = objs
+    end
+
+    pdata.preview_pos = pos
+
     local cur = minetest.get_node(pos)
     local is_free = (cur.name == "air" or
                      cur.name == "default:grass_1" or
-                     cur.name:find("^default:grass") or
-                     cur.name:find("^human_fortress:preview_"))
-
-    -- Ставимо голограму з поворотом
-    local rotation = pdata.build.rotation or 0
-    local facedir = math.floor((rotation % 360) / 90)
-    minetest.set_node(pos, { name = preview_node, param2 = facedir })
-    pdata.preview_pos = pos
-
+                     cur.name:find("^default:grass"))
     if is_free then
         minetest.chat_send_player(player_name, "✨ Місце вільне — можна будувати! (підтверди або перемісти)")
     else
-        minetest.chat_send_player(player_name, "⚠️ Увага: на цьому місці щось є! Голограму поставлено, але будівництво може не вдатись.")
+        minetest.chat_send_player(player_name, "⚠️ Увага: на цьому місці щось є! Фантом показано, але будівництво може не вдатись.")
     end
 end
 
@@ -169,7 +362,6 @@ end
 -- ============================================
 
 local function build_structure(player_name, building_type, pos, rotation)
-    -- Перевірка: чи є схема для цього типу
     if not BUILDING_SCHEMATICS or not BUILDING_SCHEMATICS[building_type] then
         minetest.chat_send_player(player_name, "❌ Немає схеми для: " .. tostring(building_type))
         return false
@@ -177,12 +369,12 @@ local function build_structure(player_name, building_type, pos, rotation)
     local schematic = BUILDING_SCHEMATICS[building_type]
     rotation = rotation or 0
 
-    -- Перевірка місця
+    -- Перевірка місця (фантомний блок ніколи не був реальним нодом на мапі,
+    -- тож тут дивимось лише на те, що там реально лежить)
     local cur = minetest.get_node(pos)
     if cur.name ~= "air" and
        cur.name ~= "default:grass_1" and
-       not cur.name:find("^default:grass") and
-       not cur.name:find("^human_fortress:preview_") then
+       not cur.name:find("^default:grass") then
         minetest.chat_send_player(player_name, "❌ Будівництво скасовано! На місці знаходиться: " .. cur.name)
         return false
     end
@@ -201,26 +393,18 @@ local function build_structure(player_name, building_type, pos, rotation)
         end
     end
 
-    -- Прибираємо голограму
-    minetest.remove_node(pos)
-
-    -- Шлях до .mts файлу
     local filepath = minetest.get_modpath("human_fortress") .. "/schematics/" .. schematic.schematic
-    
-    -- Перевіряємо чи існує файл
+
     local file = io.open(filepath, "rb")
     if not file then
         minetest.chat_send_player(player_name, "❌ Файл схеми не знайдено: " .. tostring(schematic.schematic))
         return false
     end
     file:close()
-    
-    -- Поворот: mts підтримує "0", "90", "180", "270"
+
     local rotation_str = tostring(rotation)
-    
-    -- Ставимо схему
     local result = minetest.place_schematic(pos, filepath, rotation_str, nil, false)
-    
+
     if not result then
         minetest.chat_send_player(player_name, "❌ Не вдалося звести будівлю!")
         return false
@@ -229,66 +413,42 @@ local function build_structure(player_name, building_type, pos, rotation)
     if schematic.on_built then
         schematic.on_built(player_name, pos)
     end
-    
+
     minetest.chat_send_player(player_name, "🏗️ Будівлю зведено!")
     return true
 end
+
 -- ============================================
 -- ІНВЕНТАРІ
 -- ============================================
 
 local function give_build_inventory(player, building_type)
     local name = player:get_player_name()
-    local inv = player:get_inventory()
-    inv:set_list("main", {})
-
     if not cmd_mode[name] then cmd_mode[name] = {} end
     if not cmd_mode[name].build then cmd_mode[name].build = {} end
     cmd_mode[name].build.selected_type = building_type
     cmd_mode[name].build.rotation = cmd_mode[name].build.rotation or 0
-    -- Позиція береться з того місця де гравець клікнув у меню
     local start_pos = cmd_mode[name].build.pos or player:get_pos()
     cmd_mode[name].placed_previews = cmd_mode[name].placed_previews or {}
 
-    local items = {
-        "human_fortress:build_move",
-        "human_fortress:build_rotate",
-        "human_fortress:build_confirm",
-        "human_fortress:build_cancel"
-    }
-    for i, item in ipairs(items) do
-        inv:set_stack("main", i, item .. " 1")
-    end
+    player:hud_set_flags({hotbar = false})
+    show_hud_buttons(player, BUILD_BUTTONS)
 
     local binfo = BUILDING_PREVIEWS[building_type]
     local label = binfo and binfo.label or building_type
     minetest.chat_send_player(name, "🏗️ Вибрано: " .. label)
-    minetest.chat_send_player(name, "📌 ПКМ по землі — встановити голограму")
-    minetest.chat_send_player(name, "🔄 ЛКМ/ПКМ rotate — повернути | ✅ confirm — збудувати")
+    minetest.chat_send_player(name, "📌 'перемістити' → тапни по блоку")
+    minetest.chat_send_player(name, "🔄 'повернути' | ✅ 'підтвердити' | ❌ 'скасувати'")
 
-    -- Ставимо голограму одразу на збережену позицію
     if start_pos then
         place_preview(name, start_pos)
     end
 end
 
 local function give_command_inventory(player)
-    local inv = player:get_inventory()
-    inv:set_list("main", {})
-    local items = {
-        "human_fortress:cmd_select",
-        "human_fortress:cmd_move",
-        "human_fortress:cmd_gather",
-        "human_fortress:cmd_build",
-        "human_fortress:cmd_attack",
-        "human_fortress:cmd_enter",
-        "human_fortress:cmd_repair",
-        "human_fortress:cmd_destroy",
-        "human_fortress:cmd_exit"
-    }
-    for i, item in ipairs(items) do
-        inv:set_stack("main", i, item .. " 1")
-    end
+    player:get_inventory():set_list("main", {})
+    player:hud_set_flags({hotbar = false})
+    show_hud_buttons(player, MAIN_BUTTONS)
 end
 
 -- ============================================
@@ -320,10 +480,11 @@ local function enter_command_mode(player)
     minetest.chat_send_player(name, "🎮 Режим командування активовано!")
 end
 
-local function exit_command_mode(player)
+exit_command_mode = function(player)
     local name = player:get_player_name()
-    -- Прибираємо голограму якщо є
     clear_preview(name)
+    clear_hud_buttons(player)
+    player:hud_set_flags({hotbar = true})
     local data = cmd_mode[name]
     if not data then return end
     if data.pos then player:set_pos(data.pos) end
@@ -438,7 +599,6 @@ minetest.register_tool("human_fortress:cmd_select", {
         if pointed_thing and pointed_thing.type == "node" then
             local pos = pointed_thing.under
             if ctrl.aux1 then
-                -- Shift: всі юніти
                 if human_fortress.players and human_fortress.players[name] then
                     for id, unit in pairs(human_fortress.players[name].units or {}) do
                         if unit and unit.object then table.insert(selected, id) end
@@ -446,7 +606,6 @@ minetest.register_tool("human_fortress:cmd_select", {
                 end
                 minetest.chat_send_player(name, "✅ Виділено ВСІХ юнітів: " .. #selected)
             else
-                -- Область 10 блоків
                 if human_fortress.players and human_fortress.players[name] then
                     for id, unit in pairs(human_fortress.players[name].units or {}) do
                         if unit and unit.object then
@@ -535,7 +694,7 @@ minetest.register_tool("human_fortress:cmd_gather", {
                 is_resource = true
             elseif node.name:find("stone") or node.name:find("cobble") or node.name:find("versiforn") then
                 is_resource = true
-            elseif node.name:find("wheat") or node.name:find("food") then
+            elseif node.name:find("rice") or node.name:find("food") then
                 is_resource = true
             end
 
@@ -565,16 +724,15 @@ minetest.register_tool("human_fortress:cmd_gather", {
 -- 4. БУДІВНИЦТВО — відкриває меню вибору будівлі
 -- ============================================
 
--- Допоміжна функція для отримання списку відкритих будівель гравця
 local function get_player_upgrades(name)
     local path = minetest.get_worldpath() .. "/upgrades.json"
     local file = io.open(path, "r")
     if not file then return {} end
     local content = file:read("*all")
     file:close()
-    
+
     local data = minetest.parse_json(content) or {}
-    return data[name] or {} 
+    return data[name] or {}
 end
 
 minetest.register_tool("human_fortress:cmd_build", {
@@ -593,10 +751,8 @@ minetest.register_tool("human_fortress:cmd_build", {
             if not cmd_mode[name].build then cmd_mode[name].build = {} end
             cmd_mode[name].build.pos = pos
 
-            -- Отримуємо список відкритих будівель гравця
             local my_upgrades = get_player_upgrades(name)
 
-            -- Будуємо formspec лише з відкритих будівель
             local fs = "size[6,9]" ..
                 "bgcolor[#0A0A1A;true]" ..
                 "box[0,0;6,0.8;#2D2D44]" ..
@@ -616,7 +772,6 @@ minetest.register_tool("human_fortress:cmd_build", {
     end
 })
 
--- Обробник меню вибору будівлі з перевіркою доступності
 minetest.register_on_player_receive_fields(function(player, formname, fields)
     if formname ~= "human_fortress:build" then return end
     local name = player:get_player_name()
@@ -633,8 +788,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
     for field, _ in pairs(fields) do
         if field:sub(1, 6) == "build_" then
             local building_type = field:sub(7)
-            
-            -- Перевіряємо, чи відкрита ця будівля у гравця
+
             local my_upgrades = get_player_upgrades(name)
             if my_upgrades[building_type] then
                 minetest.close_formspec(name, "human_fortress:build")
@@ -646,6 +800,7 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         end
     end
 end)
+
 -- ============================================
 -- 5. АТАКА
 -- ============================================
@@ -790,9 +945,8 @@ minetest.register_tool("human_fortress:cmd_exit", {
 -- БУДІВЕЛЬНІ ІНСТРУМЕНТИ (після вибору будівлі)
 -- ============================================
 
--- 1. ПЕРЕМІСТИТИ ГОЛОГРАМУ
 minetest.register_tool("human_fortress:build_move", {
-    description = "📌 Перемістити голограму (ПКМ по блоку)",
+    description = "📌 Перемістити фантом (ПКМ по блоку)",
     inventory_image = "human_fortress_cmd_move.png",
 
     on_place = function(itemstack, placer, pointed_thing)
@@ -800,59 +954,46 @@ minetest.register_tool("human_fortress:build_move", {
         if not cmd_mode[name] or not cmd_mode[name].build then return itemstack end
 
         if pointed_thing and pointed_thing.type == "node" then
-            local pos = pointed_thing.above  -- ставимо голограму НАД блоком
+            local pos = pointed_thing.above
             cmd_mode[name].build.pos = pos
             place_preview(name, pos)
-            minetest.chat_send_player(name, "📌 Голограму переміщено: " .. minetest.pos_to_string(pos))
+            minetest.chat_send_player(name, "📌 Фантом переміщено: " .. minetest.pos_to_string(pos))
         end
         return itemstack
     end
 })
 
--- 2. ПОВЕРНУТИ ГОЛОГРАМУ
 minetest.register_tool("human_fortress:build_rotate", {
     description = "🔄 Повернути (ЛКМ = -90°, ПКМ = +90°)",
     inventory_image = "human_fortress_cmd_select.png",
 
     on_use = function(itemstack, user, pointed_thing)
-        -- ЛКМ: -90°
         local name = user:get_player_name()
         if not cmd_mode[name] or not cmd_mode[name].build then return itemstack end
         local rot = (cmd_mode[name].build.rotation or 0)
         rot = (rot - 90) % 360
         cmd_mode[name].build.rotation = rot
-        -- Оновлюємо param2 голограми на місці
-        local ppos = cmd_mode[name].preview_pos
-        if ppos then
-            local cur = minetest.get_node(ppos)
-            if cur.name:find("^human_fortress:preview_") then
-                minetest.set_node(ppos, { name = cur.name, param2 = math.floor(rot / 90) })
-            end
+        if cmd_mode[name].preview_pos then
+            place_preview(name, cmd_mode[name].preview_pos)
         end
         minetest.chat_send_player(name, "🔄 Поворот: " .. rot .. "° (ЛКМ = -90°)")
         return itemstack
     end,
 
     on_place = function(itemstack, placer, pointed_thing)
-        -- ПКМ: +90°
         local name = placer:get_player_name()
         if not cmd_mode[name] or not cmd_mode[name].build then return itemstack end
         local rot = (cmd_mode[name].build.rotation or 0)
         rot = (rot + 90) % 360
         cmd_mode[name].build.rotation = rot
-        local ppos = cmd_mode[name].preview_pos
-        if ppos then
-            local cur = minetest.get_node(ppos)
-            if cur.name:find("^human_fortress:preview_") then
-                minetest.set_node(ppos, { name = cur.name, param2 = math.floor(rot / 90) })
-            end
+        if cmd_mode[name].preview_pos then
+            place_preview(name, cmd_mode[name].preview_pos)
         end
         minetest.chat_send_player(name, "🔄 Поворот: " .. rot .. "° (ПКМ = +90°)")
         return itemstack
     end
 })
 
--- 3. ПІДТВЕРДИТИ БУДІВНИЦТВО
 minetest.register_tool("human_fortress:build_confirm", {
     description = "✅ Підтвердити будівництво",
     inventory_image = "human_fortress_cmd_build.png",
@@ -867,7 +1008,7 @@ minetest.register_tool("human_fortress:build_confirm", {
         local rotation = bdata.rotation or 0
 
         if not pos then
-            minetest.chat_send_player(name, "❌ Постав голограму спочатку (build_move)!")
+            minetest.chat_send_player(name, "❌ Постав фантом спочатку (перемістити)!")
             return itemstack
         end
         if not building_type then
@@ -877,20 +1018,17 @@ minetest.register_tool("human_fortress:build_confirm", {
 
         minetest.chat_send_player(name, "🏗️ Будую " .. building_type .. " (поворот " .. rotation .. "°)...")
 
-        -- Прибираємо голограму і будуємо
         clear_preview(name)
         if build_structure(name, building_type, pos, rotation) then
             cmd_mode[name].build = {}
             give_command_inventory(user)
         else
-            -- Повертаємо голограму якщо не вдалось
             place_preview(name, pos)
         end
         return itemstack
     end
 })
 
--- 4. СКАСУВАТИ
 minetest.register_tool("human_fortress:build_cancel", {
     description = "❌ Скасувати вибір будівлі",
     inventory_image = "human_fortress_cmd_exit.png",
@@ -923,4 +1061,4 @@ minetest.after(5, function()
     end
 end)
 
-print("[Human Fortress] Система керування завантажена!")
+print("[Human Fortress] Система керування завантажена (фантомні блоки замість моделей)!")

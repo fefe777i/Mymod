@@ -34,11 +34,22 @@ mobs:register_mob("human_fortress:archer", {
     -- Візуал
     collisionbox = {-0.3, 0.0, -0.3, 0.3, 1.3, 0.3},
     visual = "mesh",
-    mesh = "character.b3d",
+    mesh = "arkfom.gltf",
     textures = {
-        {"human_fortress_archer_skin.png", "human_fortress_archer_clothes.png"},
+        {"arkfom.png"},
     },
     visual_size = {x=1, y=1},
+    
+    animation = {
+        speed_normal = 1,  
+        stand_start = 0,    
+        stand_end = 24,
+        walk_start = 26,    
+        walk_end = 38,
+        shoot_start = 41,   
+        shoot_end = 77,
+       -- Встановлюємо швидкість 24 fps для збігу з розрахунками
+    },
     
     -- Рух
     walk_velocity = 1,
@@ -47,6 +58,19 @@ mobs:register_mob("human_fortress:archer", {
     stepheight = 0.6,
     
     -- Логіка RTS
+    -- Замість on_step = function(self, dtime) ... end
+do_custom = function(self, dtime)
+    local vel = vector.length(self.object:get_velocity())
+
+    if vel > 0.0 and self.animation_state ~= "walk" then
+        self:set_animation("walk")
+        self.animation_state = "walk"
+    elseif vel <= 0.1 and self.animation_state ~= "stand" then
+        self:set_animation("stand")
+        self.animation_state = "stand"
+    end
+end,
+
     on_spawn = function(self)
         self.profession = "archer"
         self.owner = self.owner or ""

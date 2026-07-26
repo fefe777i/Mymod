@@ -266,9 +266,11 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         return false 
     end
 
-    if fields.btn_levelup then
+if fields.btn_levelup then
         local data = human_fortress.edos_data[name]
-        if data then
+        local player = minetest.get_player_by_name(name) -- Переконайтеся, що ви отримали об'єкт гравця
+        
+        if data and player then
             local current_cost = get_next_level_cost(data.level)
             if data.score >= current_cost then
                 data.score = data.score - current_cost
@@ -277,6 +279,11 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
                 
                 minetest.sound_play("default_tool_breaks", {to_player = name, gain = 1.0})
                 minetest.close_formspec(name, "")
+                
+                -- ОСЬ ТУТ ДОДАЄМО ВИКЛИК ОНОВЛЕННЯ СКІНА:
+                if human_fortress.update_player_model then
+                      edit_skin.update_player_skin(player)
+                end
                 
                 if human_fortress.on_level_up then
                     human_fortress.on_level_up(name)

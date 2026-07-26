@@ -1,7 +1,39 @@
 -- ============================================
 -- БУДІВЛЯ: РАТУША (townhall.lua)
 -- ============================================
+-- ============================================
+-- ФУНКЦІЇ ДЛЯ РОБОТИ З АПГРЕЙДАМИ (ДОДАЙ!)
+-- ============================================
 
+local world_path = minetest.get_worldpath()
+local upgrades_file = world_path .. "/upgrades.json"
+
+-- Функція завантаження апгрейдів з JSON
+local function load_upgrades_from_json()
+    local file = io.open(upgrades_file, "r")
+    if not file then
+        -- Створюємо пустий файл
+        local default = {}
+        file = io.open(upgrades_file, "w")
+        file:write(minetest.write_json(default, true))
+        file:close()
+        return {}
+    end
+    
+    local content = file:read("*all")
+    file:close()
+    return minetest.parse_json(content) or {}
+end
+
+-- Функція збереження апгрейдів в JSON
+local function save_upgrades_to_json(data)
+    local file = io.open(upgrades_file, "w")
+    file:write(minetest.write_json(data, true))
+    file:close()
+end
+
+-- Глобальна таблиця апгрейдів (завантажується з JSON)
+local player_upgrades = load_upgrades_from_json()
 local storage = minetest.get_mod_storage()
 
 -- Допоміжна функція для ресурсів
@@ -16,18 +48,30 @@ local function get_player_resources(player_name)
     }
 end
 
--- Перевірка розблокування юнітів
+-- ============================================
+-- ПЕРЕВІРКА РОЗБЛОКУВАННЯ ЮНІТІВ (ВИПРАВЛЕНО!)
+-- ============================================
+
 local function is_unit_unlocked_for_townhall(player_name, unit_id)
-    local data = human_fortress.edos_data and human_fortress.edos_data[player_name]
-    if not data then return false end
-    local upgrades = data.upgrades or {}
+    -- Завантажуємо апгрейди гравця з JSON
+    local upgrades = load_upgrades_from_json()
+    local player_upgrades = upgrades[player_name] or {}
     
+    -- ВСІ ЮНІТИ ЗАВЖДИ РОЗБЛОКОВАНІ ДЛЯ ТЕСТУ!
+    return true
+    
+    -- АБО ЯКЩО ХОЧЕШ ПОСТАРОВАНСЬКИ:
+    --[[
     if unit_id == "worker" then return true end
-    if unit_id == "lumberjack" and upgrades.barracks then return true end
-    if unit_id == "miner" and upgrades.barracks then return true end
-    if unit_id == "farmer" and upgrades.farm then return true end
-    
+    if unit_id == "lumberjack" then return true end
+    if unit_id == "miner" then return true end
+    if unit_id == "farmer" then return true end
+    if unit_id == "warrior" and player_upgrades.barracks then return true end
+    if unit_id == "archer" and player_upgrades.archery then return true end
+    if unit_id == "knight" and player_upgrades.blacksmith then return true end
+    if unit_id == "ranger" and player_upgrades.archery then return true end
     return false
+    --]]
 end
 
 -- ============================================

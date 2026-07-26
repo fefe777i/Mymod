@@ -366,3 +366,69 @@ minetest.register_node("human_fortress:rice", {
         check_gathering(name, pos)
     end,
 })
+
+
+
+
+minetest.register_node("human_fortress:berry_bush", {
+    description = "Кущ ягід",
+    tiles = {"default_blueberry_bush_leaves.png^default_blueberry_overlay.png"}, -- Замініть на текстуру повного куща
+    groups = {snappy = 3},
+    
+    -- При натисканні правою кнопкою миші
+    on_rightclick = function(pos, node, clicker, itemstack, pointed_thing)
+        local meta = minetest.get_meta(pos)
+        local is_empty = meta:get_int("is_empty")
+        
+        if is_empty == 1 then
+            minetest.chat_send_player(clicker:get_player_name(), "Кущ ще не відновився!")
+            return
+        end
+
+        local inv = clicker:get_inventory()
+        
+        -- Визначаємо випадкові кількості
+        local count_v = math.random(1, 20) -- від 1 до 3
+        local count_et = math.random(1, 60) -- від 1 до 6
+        local count_ed = math.random(1, 90) -- від 1 до 9
+
+        -- Роздача предметів
+        local items = {
+            {name = "human_fortress:versiform", count = count_v},
+            {name = "human_fortress:ether", count = count_et},
+            {name = "human_fortress:edos", count = count_ed}
+        }
+
+        for _, item in ipairs(items) do
+            local stack = ItemStack(item.name .. " " .. item.count)
+            if inv:room_for_item("main", stack) then
+                inv:add_item("main", stack)
+            else
+                minetest.add_item(pos, stack) -- Кидаємо на землю, якщо інвентар повний
+            end
+        end
+
+        minetest.chat_send_player(clicker:get_player_name(), "Ви зібрали ресурси!")
+
+        -- Робимо кущ пустим
+        meta:set_int("is_empty", 1)
+        minetest.swap_node(pos, {name = "human_fortress:berry_bush_empty"}) -- Замініть на назву пустої текстури/вузла
+        
+        -- Запускаємо таймер на 10 хвилин (600 секунд)
+        minetest.get_node_timer(pos):start(600)
+    end,
+})
+
+-- Таймер для відновлення
+minetest.register_node("human_fortress:berry_bush_empty", {
+    description = "Порожній кущ",
+    tiles = {"default_blueberry_bush_leaves.png"},
+    groups = {snappy = 3, not_in_creative_inventory = 1},
+    drop = "human_fortress:berry_bush",
+    
+    on_timer = function(pos, elapsed)
+        minetest.swap_node(pos, {name = "human_fortress:berry_bush"})
+        minetest.get_meta(pos):set_int("is_empty", 0)
+        return false -- зупиняємо таймер
+    end,
+})
