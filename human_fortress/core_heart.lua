@@ -384,6 +384,15 @@ local function create_core_for_building(player_name, building_type, pos)
     })
 end
 
+local function remove_old_building_computers(building_type, pos)
+    local blocks = get_building_blocks(building_type, pos)
+    for _, block in ipairs(blocks) do
+        if minetest.get_node(block).name == "human_fortress:building_computer" then
+            minetest.remove_node(block)
+        end
+    end
+end
+
 local function wrap_building(building_type, building_data)
     if not building_data or building_data._core_heart_wrapped then
         return
@@ -393,10 +402,14 @@ local function wrap_building(building_type, building_data)
 
     building_data.on_built = function(player_name, pos, ...)
         if old_on_built then
-            old_on_built(player_name, pos, ...)
+            local ok, err = pcall(old_on_built, player_name, pos, ...)
+            if not ok then
+                minetest.log("error", "[Human Fortress] Помилка on_built " .. tostring(building_type) .. ": " .. tostring(err))
+            end
         end
 
         minetest.after(0, function()
+            remove_old_building_computers(building_type, pos)
             create_core_for_building(player_name, building_type, pos)
         end)
     end
