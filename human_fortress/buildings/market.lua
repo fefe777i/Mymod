@@ -44,17 +44,6 @@ local building_data = {
     unlock_required = "market",
     
     on_built = function(player_name, pos)
-        local computer_pos = {x = pos.x + 0.5, y = pos.y + 1, z = pos.z + 0.5}
-        
-        minetest.set_node(computer_pos, {name = "human_fortress:building_computer"})
-        
-        local meta = minetest.get_meta(computer_pos)
-        meta:set_string("building_type", "market")
-        meta:set_string("owner", player_name)
-        meta:set_string("building_pos", minetest.serialize(pos))
-        meta:set_int("building_cost", 300)
-        meta:set_string("infotext", "🏪 Ринок\nВласник: " .. player_name)
-        
         if not human_fortress.buildings then human_fortress.buildings = {} end
         if not human_fortress.buildings[player_name] then
             human_fortress.buildings[player_name] = {}
@@ -65,7 +54,6 @@ local building_data = {
         })
         
         minetest.chat_send_player(player_name, "🏪 Ринок побудований!")
-        minetest.chat_send_player(player_name, "📌 Комп'ютер на " .. minetest.pos_to_string(computer_pos))
     end
 }
 
@@ -75,11 +63,11 @@ local building_data = {
 
 if not BUILDING_MENUS then BUILDING_MENUS = {} end
 
-BUILDING_MENUS.market = function(player_name, computer_pos)
+BUILDING_MENUS.market = function(player_name, core_pos)
     minetest.chat_send_player(player_name, "✅ МЕНЮ РИНКУ ВІДКРИТО!")
     
-    local meta = minetest.get_meta(computer_pos)
-    local owner = meta:get_string("owner")
+    local core_data = human_fortress.get_core_data and human_fortress.get_core_data(core_pos)
+    local owner = core_data and core_data.owner or ""
     
     if owner ~= player_name then
         minetest.chat_send_player(player_name, "❌ Це чужа будівля!")
@@ -87,7 +75,7 @@ BUILDING_MENUS.market = function(player_name, computer_pos)
     end
     
     local tmp = minetest.deserialize(storage:get_string("tmp_computer")) or {}
-    tmp[player_name] = computer_pos
+    tmp[player_name] = core_pos
     storage:set_string("tmp_computer", minetest.serialize(tmp))
     
     local resources = get_player_resources(player_name)
