@@ -1,48 +1,19 @@
-# 🔥 Super Give: Advanced Item Management
+## 🗣 Super_Give
 
-![Status](https://img.shields.io/badge/Status-Production--Ready-green)
-![License](https://img.shields.io/badge/License-MIT-blue)
-![Team](https://img.shields.io/badge/Dev--Team-7--Members-orange)
+This mod adds the /sgive command, which simplifies the regular item granting process. By typing this command, a menu will open displaying a list of all supporting nodes and items in the game. You select an item and give it to yourself using the "Give" button. You can also edit the selected node; clicking the "Edit" button opens a menu where you can change the item's name, text color, and physical color. Moreover, you can change the damage, change the durability, give light and reload, there's a lot in the mod)
 
-> "The ultimate bridge between your inventory and every item in the game."
+## Commands
+/sgive: Opens the main item selection and search menu.  
+/sgive [filter]: Opens the menu with a pre-applied search filter (e.g., /sgive stone).  
 
-**Super Give** — A professional-grade system utility designed for the DragonArsenal ecosystem. It complements standard commands by adding a high-performance, intuitive graphical interface via the /sgive command.
+## Requirements & Installation
+Privileges: Players must have the give privilege to use the menu.  
 
----
+Installation: Place the super_give folder into your mods directory and enable it in your mod list
 
-## 💎 Features
 
-* 🔍 **Smart Dynamic Search:** Instant filtering across all registered items.
-* 🔢 **Precise Quantity Control:** Bulk-issue items with a single click.
-* ✍️ **Live Meta-Editing:** Rename items on the fly.
-* 🎨 **Dark-Steel UI:** Custom-built "Metal" theme.
-* ⚡ **Zero Conflict Engine:** Coexists with standard commands.
+# MIT License
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software to deal in the Software without restriction.  
 
----
-
-## 🛠 Administration
-
-To access the menu, use the chat command:
-`/sgive [optional_filter]`
-
----
-
-## 👥 The ABH Aryhel Team (Credits)
-
-This project is the result of a massive collaboration between 7 developers:
-
-* **XsDragonFenixXs** — Lead Core Developer
-* **Zeleborov** — System Architect
-* **Toy_Tailer** — UI/UX Design
-* **LexFlex** — Logic & Optimization
-* **ADIDAS** — Quality Assurance
-* **Danil009** — Concept & Production Strategy
-* **Avoma** — Community Support
-
----
-
-## 📂 Project Structure
-* **init.lua** — Core logic and GUI engine.
-* **mod.conf** — Project configuration.
-* **textures/** — High-definition GUI assets (Metal Theme).
-* **LICENSE** — MIT Legal documentation.
+# Credits
+XsDragonFenixXs.

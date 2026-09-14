@@ -71,7 +71,7 @@ dofile(path .. "/units.lua")
 BUILDING_SCHEMATICS = {}
 local building_files = {
     "townhall.lua",
-    "farm.lua",
+    "rice_field.lua",
     "barracks.lua",
     "wall.lua",
     "tower.lua",
@@ -95,7 +95,7 @@ for _, file in ipairs(building_files) do
         minetest.log("warning", "[HF] ❌ Не знайдено: " .. filepath)
     end
 end
-
+dofile(path .. "/core_heart.lua")
 dofile(path .. "/buildings.lua")
 dofile(path .. "/commands.lua")
 dofile(path .. "/ether_tree.lua")
@@ -414,10 +414,10 @@ end
 local sky_timer = 0
 minetest.register_globalstep(function(dtime)
     sky_timer = sky_timer + dtime
-    if sky_timer >= 5 then -- Оновлюємо кожні 5 сек, щоб небо змінювалось плавніше
+    if sky_timer >= 2 then -- Зменшимо до 2 секунд для швидшої реакції
         sky_timer = 0
         for _, player in ipairs(minetest.get_connected_players()) do
-            update_sky(player)
+            update_sky(player) -- ОСЬ ЦЕЙ РЯДОК БУВ ПРОПУЩЕНИЙ
         end
     end
 end)

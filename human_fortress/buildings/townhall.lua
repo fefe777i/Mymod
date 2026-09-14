@@ -53,26 +53,19 @@ end
 -- ============================================
 
 local function is_unit_unlocked_for_townhall(player_name, unit_id)
-    -- Завантажуємо апгрейди гравця з JSON
-    local upgrades = load_upgrades_from_json()
-    local player_upgrades = upgrades[player_name] or {}
-    
-    -- ВСІ ЮНІТИ ЗАВЖДИ РОЗБЛОКОВАНІ ДЛЯ ТЕСТУ!
-    return true
-    
-    -- АБО ЯКЩО ХОЧЕШ ПОСТАРОВАНСЬКИ:
-    --[[
+    -- Базові робочі юніти — завжди в Ратуші
     if unit_id == "worker" then return true end
     if unit_id == "lumberjack" then return true end
     if unit_id == "miner" then return true end
     if unit_id == "farmer" then return true end
-    if unit_id == "warrior" and player_upgrades.barracks then return true end
-    if unit_id == "archer" and player_upgrades.archery then return true end
-    if unit_id == "knight" and player_upgrades.blacksmith then return true end
-    if unit_id == "ranger" and player_upgrades.archery then return true end
+    
+    -- ВСІ ІНШІ юніти (воїни, лучники, еліта) НЕ спавняться в Ратуші!
+    -- Вони йдуть у свої будівлі:
+    -- warrior, samurai, archer → Казарми (barracks)
+    -- elite_warrior → Ринок (market)
     return false
-    --]]
 end
+
 
 -- ============================================
 -- ДАНІ БУДІВЛІ (townhall.lua)
@@ -83,7 +76,7 @@ local building_data = {
     description = "Центр управління",
     level = 1,
     cost = {
-        score = 100,
+        score = 5,
         wood = 50,
         stone = 30
     },

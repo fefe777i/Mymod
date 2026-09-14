@@ -1,4 +1,3 @@
--- Реєстрація блоку вилки (НЕАКТИВОВАНОЇ)
 minetest.register_node("human_fortress:vilka_inactive", {
     description = "Вилка Фортеці (неактивована)",
     tiles = {"human_fortress_vilka_inactive.png"},
@@ -8,12 +7,25 @@ minetest.register_node("human_fortress:vilka_inactive", {
     paramtype2 = "facedir",
     groups = {cracky = 1, level = 2},
     sounds = default.node_sound_stone_defaults(),
-    
+
+    -- ХІТБОКС: 2×2 по X/Z, висота 3 по Y
+    -- Важливо: type="fixed" і обгортка fixed = {...}
+    collision_box = {
+        type = "fixed",
+        fixed = {-1, -0.5, -1, 1, 4.5, 1}
+    },
+
+    -- ВИДІЛЕННЯ (рамка при наведенні)
+    selection_box = {
+        type = "fixed",
+        fixed = {-1, -0.5, -1, 1, 4.5, 1}
+    },
+
     on_rightclick = function(pos, node, clicker)
         local player_name = clicker:get_player_name()
         show_vilka_inactive_menu(player_name, pos)
     end,
-    
+
     on_construct = function(pos)
         local meta = minetest.get_meta(pos)
         meta:set_string("infotext", "❌ Вилка Фортеці (неактивована)\nПКМ - активувати за 10 Ейдосів")
@@ -31,6 +43,16 @@ minetest.register_node("human_fortress:vilka_active", {
     paramtype2 = "facedir",
     groups = {cracky = 1, level = 2},
     sounds = default.node_sound_stone_defaults(),
+    collision_box = {
+        type = "fixed",
+        fixed = {-1, -0.5, -1, 1, 4.5, 1}
+    },
+
+    -- ВИДІЛЕННЯ (рамка при наведенні)
+    selection_box = {
+        type = "fixed",
+        fixed = {-1, -0.5, -1, 1, 4.5, 1}
+    },
     
     on_rightclick = function(pos, node, clicker)
         local player_name = clicker:get_player_name()
@@ -51,15 +73,7 @@ minetest.register_node("human_fortress:vilka_active", {
     end
 })
 
--- Крафт НЕАКТИВОВАНОЇ вилки
-minetest.register_craft({
-    output = "human_fortress:vilka_inactive",
-    recipe = {
-        {"default:steel_ingot", "default:mese_crystal", "default:steel_ingot"},
-        {"default:obsidian", "human_fortress:edos", "default:obsidian"},
-        {"default:steel_ingot", "default:mese_crystal", "default:steel_ingot"}
-    }
-})
+
 
 -- Функція активації вилки
 local function activate_vilka(player_name, pos)

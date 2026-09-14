@@ -44,7 +44,7 @@ local function get_texture_for_level(skin, level)
 end
 
 -- 4. Отримати модель за рівнем
-local function get_mesh_for_level(level)
+function get_mesh_for_level(level)
  if level >= 50 then return LEVEL_MODELS[50].mesh
  elseif level >= 40 then return LEVEL_MODELS[40].mesh
  elseif level >= 30 then return LEVEL_MODELS[30].mesh
@@ -54,7 +54,7 @@ local function get_mesh_for_level(level)
 end
 
 -- 5. Отримати текстуру гравця (для реального оновлення)
-local function get_skin_texture(player)
+function get_skin_texture(player)
  local name = player:get_player_name()
  local level = 0
  local selected_id = edit_skin.skins[1] and edit_skin.skins[1].id

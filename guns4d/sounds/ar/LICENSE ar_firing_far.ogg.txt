@@ -1,3 +1,0 @@
-ar_firing_far.ogg:
-by (unknown) on opengameart.org (https://opengameart.org/content/the-free-firearm-sound-library)
-License: Creative Commons (CC0)

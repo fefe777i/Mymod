@@ -1,8 +1,12 @@
 -------------------------------------------------
 -- Human Fortress RTS - HUD та Інтерфейс
 -------------------------------------------------
+
+-- Таблиця для кешування кількості юнітів
+local unit_counts = {}
+local unit_count_timer = 0
+
 minetest.register_on_joinplayer(function(player)
-    -- Даємо невелику затримку, щоб дані гравця встигли завантажитися з бази
     minetest.after(0.5, function()
         if player and player:is_player() then
             human_fortress.update_player_model(player)
@@ -16,23 +20,19 @@ function human_fortress.update_player_model(player)
     local name = player:get_player_name()
     local data = human_fortress.edos_data[name]
     
-    -- Якщо даних взагалі немає, вважаємо, що це нульовий/перший рівень
     local level = 0
     if data and data.level then
         level = data.level
     end
     
-    -- Тепер логіка працюватиме стабільно:
     local model, texture, e_height, visual_size
     
     if level == 0 then
-        -- Спеціальна логіка для 0 рівня
         model = "player_lvl_0.obj"
         texture = "player_lvl_0.png"
         e_height = 1
         visual_size = 8.0
     elseif level >= 1 and level < 10 then
-        -- ... і так далі
         model = "player_lvl_0.obj"
         texture = "player_lvl_0.png"
         e_height = 1
@@ -64,13 +64,12 @@ function human_fortress.update_player_model(player)
         visual_size = 1.3
     end
 
-player:set_properties({
+    player:set_properties({
         visual = "mesh",
         mesh = model,
         textures = {texture},
-        visual_size = {x=visual_size, y=visual_size, z=visual_size}, -- додаємо явно Z
+        visual_size = {x=visual_size, y=visual_size, z=visual_size},
         eye_height = e_height,
-        -- Спробуй змінити на 0, якщо було 180, або навпаки
         sprite_yaw_correction = 0,
     })
 end
@@ -104,7 +103,6 @@ minetest.register_entity("human_fortress:level_gift", {
         pos.y = pos.y - 5 * dtime
         
         if pos.y < 0 then
-            --spawn_letter_blocks(pos)
             self.object:remove()
         else
             self.object:set_pos(pos)
@@ -112,7 +110,7 @@ minetest.register_entity("human_fortress:level_gift", {
     end,
 })
 
--- Реєстрація блоків літер (тільки англійські літери в назвах!)
+-- Реєстрація блоків літер
 local letters = {
     {name = "m", letter = "м"},
     {name = "o", letter = "о"},
@@ -132,35 +130,10 @@ for _, l in ipairs(letters) do
     })
 end
 
--- Функція спавну літер (В РЯД НА ЗЕМЛІ)
---[[local function spawn_letter_blocks(pos)
-    local letters = {
-        {name = "m", letter = "м"},
-        {name = "o", letter = "о"},
-        {name = "v", letter = "в"},
-        {name = "a", letter = "а"}
-    }
-    
-    for i = 1, 4 do
-        local x_offset = (i - 2.5) * 2
-        local letter_pos = {
-            x = pos.x + x_offset,
-            y = pos.y,
-            z = pos.z
-        }
-        
-        minetest.set_node(letter_pos, {
-            name = "human_fortress:letter_" .. letters[i].name, -- ЗМІНА ТУТ
-            param2 = math.random(0, 3) * 90
-        })
-    end
-end]]
-
 -- ПОВОРОТ ПРИ НАТИСКАННІ
 minetest.register_on_punchnode(function(pos, node, puncher)
     if not puncher or not puncher:is_player() then return end
     
-    -- ПЕРЕВІРЯЄМО ПО АНГЛІЙСЬКИХ НАЗВАХ
     if node.name == "human_fortress:letter_m" or
        node.name == "human_fortress:letter_o" or
        node.name == "human_fortress:letter_v" or
@@ -189,7 +162,6 @@ local function check_letters(player)
             local check_pos = {x = pos.x + x, y = pos.y, z = pos.z + z}
             local node = minetest.get_node(check_pos)
             
-            -- ТЕПЕР ПЕРЕВІРЯЄМО ПО АНГЛІЙСЬКИХ НАЗВАХ
             if node.name == "human_fortress:letter_m" or
                node.name == "human_fortress:letter_o" or
                node.name == "human_fortress:letter_v" or
@@ -262,6 +234,12 @@ function human_fortress.update_hud(player)
             end
         end
     end
+
+    -- Оновлення лічильника юнітів (з кешу)
+    if hud.unit_text then
+        local count = unit_counts[name] or 0
+        player:hud_change(hud.unit_text, "text", tostring(count))
+    end
 end
 
 -- 2. Функція "міст" для оновлення всього
@@ -327,6 +305,16 @@ local function create_hud(player)
             hud_elem_type = "text", position = {x = 0, y = 0}, offset = {x = 105, y = 170},
             text = "0", number = 0xFFFFFF, alignment = {x = 0, y = 0},
         }),
+        -- === НОВЕ: Лічильник юнітів ===
+        unit_icon = player:hud_add({
+            hud_elem_type = "image", position = {x = 0, y = 0}, offset = {x = 200, y = 35},
+            text = "human_fortress_fom.png", scale = {x = 2.2, y = 2.2}, alignment = {x = 0, y = 0},
+        }),
+        unit_text = player:hud_add({
+            hud_elem_type = "text", position = {x = 0, y = 0}, offset = {x = 235, y = 35},
+            text = "0", number = 0x00FFFF, alignment = {x = 0, y = 0},
+        }),
+        -- ==============================
         edos_icon = player:hud_add({
             hud_elem_type = "image", position = {x = 0, y = 0.5}, offset = {x = 20, y = 0},
             text = "edos.png", scale = {x = 3.5, y = 3.5}, alignment = {x = 1, y = 0},
@@ -365,12 +353,15 @@ minetest.register_on_leaveplayer(function(player)
     if human_fortress.hud_ids then 
         human_fortress.hud_ids[name] = nil 
     end
+    if unit_counts then
+        unit_counts[name] = nil
+    end
 end)
 
--- 5. Крок (оновлюємо лише HUD)
-local hud_timer = 0
+-- 5. Крок (оновлюємо HUD + рахуємо юніти)
 minetest.register_globalstep(function(dtime)
-    hud_timer = hud_timer + dtime
+    -- Оновлення HUD ресурсів (кожні 0.5 сек)
+    hud_timer = (hud_timer or 0) + dtime
     if hud_timer >= 0.5 then
         for _, player in ipairs(minetest.get_connected_players()) do
             if player and player:is_player() then
@@ -378,5 +369,29 @@ minetest.register_globalstep(function(dtime)
             end
         end
         hud_timer = 0
+    end
+
+    -- Підрахунок юнітів (кожні 2 секунди, окремо)
+    unit_count_timer = unit_count_timer + dtime
+    if unit_count_timer >= 2.0 then
+        for _, player in ipairs(minetest.get_connected_players()) do
+            if player and player:is_player() then
+                local name = player:get_player_name()
+                local count = 0
+                local ppos = player:get_pos()
+                
+                -- Шукаємо юнітів гравника в радіусі 300 блоків
+                local objs = minetest.get_objects_inside_radius(ppos, 300)
+                for _, obj in ipairs(objs) do
+                    local ent = obj:get_luaentity()
+                    if ent and ent.unit_data and ent.unit_data.owner == name then
+                        count = count + 1
+                    end
+                end
+                
+                unit_counts[name] = count
+            end
+        end
+        unit_count_timer = 0
     end
 end)

@@ -12,19 +12,15 @@ local worker_data = {
 mobs:register_mob("human_fortress:worker", {
     type = "npc",
     passive = true,
-    unit_data = {}, -- Важливо для units.lua
 
-    -- Характеристики
     hp_min = 20,
     hp_max = 20,
     collisionbox = {-0.3, 0.0, -0.3, 0.3, 1.3, 0.3},
-    -- ... вище ваш код ...
     visual = "mesh",
     mesh = "fom.gltf",
     textures = {{"fom.png"}},
     visual_size = {x=1, y=1},
 
-    -- Додайте це:
     animation = {
         speed_normal = 1,
         speed_run = 15,
@@ -35,39 +31,63 @@ mobs:register_mob("human_fortress:worker", {
         punch_start = 41,
         punch_end = 60,
     },
-    -- ... далі ваш код ...
 
     on_spawn = function(self)
-        self.unit_data = self.unit_data or {}
+        self.unit_data = {
+            unit_id = "u_" .. tostring(math.random(1000000, 9999999)) .. "_" .. tostring(os.time()) .. "_" .. tostring(math.random(1, 10000)),
+        }
         self.inventory = {wood = 0, stone = 0, food = 0}
         return true
     end,
 
-    -- 1. ЦЯ ФУНКЦІЯ ПАКУЄ ДАНІ ПРИ ВИХОДІ З ГРИ АБО ВИВАНТАЖЕННІ КАРТИ
     get_staticdata = function(self)
-        local tmp = {
+        local data = {
             unit_data = self.unit_data or {},
-            inventory = self.inventory or {wood = 0, stone = 0, food = 0}
+            inventory = self.inventory or {wood = 0, stone = 0, food = 0},
+            order = self.order,
+            goto_destination = self.goto_destination,
+            last_gather_pos = self.last_gather_pos,
+            has_greeted = self.has_greeted,
+            unload_target = self.unload_target,
         }
-        return minetest.serialize(tmp)
+        return minetest.serialize(data)
     end,
 
-    -- 2. ЦЯ ФУНКЦІЯ РОЗПАКОВУЄ ДАНІ, КОЛИ ТИ ПЕРЕЗАХОДИШ В ГРУ
     on_activate = function(self, staticdata, dtime_s)
         if mobs.api and mobs.api.on_activate then
             mobs.api.on_activate(self, staticdata, dtime_s)
         end
 
+        self.unit_data = {}
+        self.inventory = {wood = 0, stone = 0, food = 0}
+        self.order = nil
+        self.goto_destination = nil
+        self.last_gather_pos = nil
+        self.has_greeted = false
+        self.unload_target = nil
+
         if staticdata and staticdata ~= "" then
             local data = minetest.deserialize(staticdata)
-            if data then
+            if data and type(data) == "table" then
                 self.unit_data = data.unit_data or {}
                 self.inventory = data.inventory or {wood = 0, stone = 0, food = 0}
+                self.order = data.order
+                self.goto_destination = data.goto_destination
+                self.last_gather_pos = data.last_gather_pos
+                self.has_greeted = data.has_greeted
+                self.unload_target = data.unload_target
             end
+        end
+
+        local uid = self.unit_data and self.unit_data.unit_id
+        if uid and human_fortress.pending_commands and human_fortress.pending_commands[uid] then
+            local pending = human_fortress.pending_commands[uid]
+            self.unit_data.command = pending.command
+            self.unit_data.target = pending.target
+            human_fortress.pending_commands[uid] = nil
         end
     end,
 
-    -- 3. ЛОГІКА СМЕРТІ ЮНІТА (ВИПАДІННЯ РЕСУРСІВ)
     on_die = function(self, pos)
         local drop_pos = pos or self.object:get_pos()
         if not drop_pos then return end
@@ -93,14 +113,21 @@ mobs:register_mob("human_fortress:worker", {
         if owner ~= "" then
             minetest.chat_send_player(owner, "💀 Твій Формикс загинув у бою! Ресурси випали на землю.")
         end
+
+        local uid = self.unit_data and self.unit_data.unit_id
+        if uid and owner ~= "" and human_fortress.players and human_fortress.players[owner] then
+            local list = human_fortress.players[owner].selected_ids or {}
+            for i = #list, 1, -1 do
+                if list[i] == uid then table.remove(list, i) end
+            end
+        end
+        if uid and human_fortress.pending_commands then
+            human_fortress.pending_commands[uid] = nil
+        end
     end,
 
-    -- ========================================================
-    -- ОСНОВНИЙ ЦИКЛ ЮНІТА (HUMAN FORTRESS MOBS API)
-    -- ========================================================
     do_custom = function(self, dtime)
-
-        -- 0. ПРИВІТАННЯ (не блокує основну логіку — без раннього return)
+        -- Привітання
         self.timer_greet = (self.timer_greet or 0) + dtime
         if self.timer_greet >= 2 then
             self.timer_greet = 0
@@ -124,7 +151,7 @@ mobs:register_mob("human_fortress:worker", {
             end
         end
 
-        -- 1. ЗАХИСТ ТА ІНІЦІАЛІЗАЦІЯ
+        -- Захист
         if not self.unit_data then
             self.unit_data = {}
         end
@@ -134,7 +161,6 @@ mobs:register_mob("human_fortress:worker", {
 
         local owner = self.unit_data.owner or ""
 
-        -- ДОПОМІЖНА ФУНКЦІЯ: НАКАЗ ДЛЯ ВБУДОВАНОГО ШІ (ПЛАВНИЙ РУХ)
         local move_to = function(entity, target)
             local pos = entity.object:get_pos()
             if not pos or not target then return end
@@ -163,7 +189,6 @@ mobs:register_mob("human_fortress:worker", {
                         entity.use_direct_move = true
                         entity.path_fail_count = 0
                     else
-                        -- Поки триває пошук шляху — стоїмо у "stand", щоб не залипало на "walk"
                         self:set_animation("stand")
                         return
                     end
@@ -179,7 +204,7 @@ mobs:register_mob("human_fortress:worker", {
                 })
                 local yaw = math.atan2(-dir.x, dir.z)
                 entity.object:set_yaw(yaw)
-                self:set_animation("walk") -- ВИПРАВЛЕННЯ: анімація ходьби для прямого руху
+                self:set_animation("walk")
 
                 if dist < 2.0 then
                     entity.use_direct_move = false
@@ -208,7 +233,7 @@ mobs:register_mob("human_fortress:worker", {
             end
         end
 
-        -- 2. «СЛУХАЧ» КОМАНД ГРАВЦЯ
+        -- Слухач команд
         if self.unit_data.command then
             self.order = self.unit_data.command
             self.goto_destination = self.unit_data.target
@@ -226,7 +251,7 @@ mobs:register_mob("human_fortress:worker", {
             end
         end
 
-        -- 3. ВИКОНАННЯ РУХУ (MOVE)
+        -- Рух (MOVE)
         if self.order == "move" and self.goto_destination then
             local pos = self.object:get_pos()
             if vector.distance(pos, self.goto_destination) > 1.5 then
@@ -240,7 +265,7 @@ mobs:register_mob("human_fortress:worker", {
             return
         end
 
-        -- 4. ЛОГІКА АВТО-РОЗВАНТАЖЕННЯ
+        -- Авто-розвантаження
         local total_res = (self.inventory.wood or 0) + (self.inventory.stone or 0) + (self.inventory.food or 0)
 
         if total_res >= 300 or self.order == "unload" then
@@ -287,7 +312,7 @@ mobs:register_mob("human_fortress:worker", {
             return
         end
 
-        -- 5. ЛОГІКА ЗБОРУ РЕСУРСІВ (GATHER)
+        -- Збір ресурсів (GATHER)
         if self.order == "gather" and self.goto_destination then
             local pos = self.object:get_pos()
             local dist = vector.distance(pos, self.goto_destination)
@@ -298,7 +323,7 @@ mobs:register_mob("human_fortress:worker", {
                 return
             else
                 self.object:set_velocity({x=0, y=0, z=0})
-                self:set_animation("punch") -- анімація видобутку ресурсу
+                self:set_animation("punch")
                 self.gather_timer = (self.gather_timer or 0) + dtime
 
                 if self.gather_timer >= 1.5 then
@@ -363,7 +388,7 @@ mobs:register_mob("human_fortress:worker", {
             return
         end
 
-        -- 6. БОЙОВА ЛОГІКА
+        -- Бойова логіка
         self.attack_timer = (self.attack_timer or 0) + dtime
         if self.attack_timer >= 2.0 and self.order ~= "move" and self.order ~= "gather" then
             self.attack_timer = 0
@@ -395,7 +420,7 @@ mobs:register_mob("human_fortress:worker", {
                     move_to(self, t_pos)
                 else
                     self.object:set_velocity({x=0, y=0, z=0})
-                    self:set_animation("punch") -- ВИПРАВЛЕННЯ: анімація удару
+                    self:set_animation("punch")
                     local target_ent = target_obj:get_luaentity()
                     if target_ent and target_ent.health then
                         target_ent.health = target_ent.health - 2
@@ -412,10 +437,9 @@ mobs:register_mob("human_fortress:worker", {
                 self:set_animation("stand")
             end
         end
-    end, -- закриває do_custom
-}) -- закриває mobs:register_mob
+    end,
+})
 
--- Додаємо в список
 if not human_fortress.units_list then human_fortress.units_list = {} end
 human_fortress.units_list.worker = {
     name = worker_data.name,
@@ -425,3 +449,15 @@ human_fortress.units_list.worker = {
     profession = "basic",
     entity = "human_fortress:worker",
 }
+
+function human_fortress.spawn_worker(pos, player_name)
+    local ent = minetest.add_entity(pos, "human_fortress:worker")
+    if not ent then return nil end
+    local luaent = ent:get_luaentity()
+    if not luaent then ent:remove() return nil end
+
+    luaent.unit_data = luaent.unit_data or {}
+    luaent.unit_data.owner = player_name
+
+    return ent
+end

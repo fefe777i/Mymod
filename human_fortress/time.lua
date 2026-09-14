@@ -277,3 +277,55 @@ minetest.register_chatcommand("tax_status", {
         end
     end
 })
+
+-- КОМАНДА ДЛЯ ЗМІНИ ОСОБИСТОГО ЧАСУ ГРАВЦЯ
+minetest.register_chatcommand("set_time", {
+    params = "<година> [хвилина] або <хвилини_від_0_до_1439>",
+    description = "Змінити свій особистий ігровий час",
+    func = function(name, param)
+        local args = {}
+        for word in param:gmatch("%S+") do
+            table.insert(args, tonumber(word))
+        end
+        
+        if #args == 0 then
+            minetest.chat_send_player(name, "§RВикористання: /set_time <година> [хвилина] або /set_time <хвилини>")
+            minetest.chat_send_player(name, "§FПриклад: /set_time 14 30 (або /set_time 870)")
+            return
+        end
+        
+        local new_total_minutes = 0
+        
+        if #args >= 2 then
+            local hour = args[1]
+            local minute = args[2]
+            
+            if hour < 0 or hour > 23 or minute < 0 or minute > 59 then
+                minetest.chat_send_player(name, "§RПомилка: Година має бути від 0 до 23, а хвилина від 0 до 59!")
+                return
+            end
+            
+            new_total_minutes = (hour * 60) + minute
+        else
+            local total = args[1]
+            if total < 0 or total > 1439 then
+                minetest.chat_send_player(name, "§RПомилка: Значення має бути в межах від 0 до 1439 хвилин!")
+                return
+            end
+            
+            new_total_minutes = total
+        end
+        
+        -- Оновлюємо час гравця
+        player_hf_times[name] = new_total_minutes
+        
+        -- Оновлюємо стрілку годинника і НЕБО миттєво!
+        local p = minetest.get_player_by_name(name)
+        if p then
+            update_sky(p)
+        end
+        
+        local hour, minute = get_player_hour_minute(name)
+        minetest.chat_send_player(name, "§E[Час]§F Твій особистий час успішно змінено на §G" .. string.format("%02d:%02d", hour, minute) .. "§F.")
+    end
+})

@@ -50,6 +50,76 @@ minetest.register_node("human_fortress:flouwergame", {
     end,
 })
 
+-- ============================================
+-- НАГОРОДА: ФОРМСПЕКС З ЕЙДОСАМИ
+-- ============================================
+
+function human_fortress.show_reward_formspec(player, count)
+    local name = player:get_player_name()
+    local inv_name = "hf_reward_" .. name
+    
+    -- Видаляємо старий інвентар, якщо був
+    local old_inv = minetest.get_inventory({type = "detached", name = inv_name})
+    if old_inv then
+        minetest.remove_detached_inventory(inv_name)
+    end
+    
+    local inv = minetest.create_detached_inventory(inv_name, {
+        allow_move = function() return 0 end,
+        allow_put = function() return 0 end,
+        allow_take = function(inv, listname, index, stack, player)
+            return stack:get_count()
+        end,
+    })
+    
+    inv:set_size("main", 1)
+    inv:add_item("main", ItemStack("human_fortress:edos " .. count))
+    
+    local formspec = 
+        "size[8,4]" ..
+        "bgcolor[#1a1a2e;true]" ..
+        "box[0,0;8,0.8;#16213e]" ..
+        "label[2.5,0.2;🏆 НАГОРОДА ЗА ПЕРЕМОГУ!]" ..
+        "label[3,1.2;Забери свої ейдоси:]" ..
+        "list[detached:" .. inv_name .. ";main;3.5,2;1,1;]" ..
+        "list[current_player;main;0,3;8,1;]" ..
+        "listring[detached:" .. inv_name .. ";main]" ..
+        "listring[current_player;main]"
+    
+    minetest.show_formspec(name, "human_fortress:reward", formspec)
+end
+
+minetest.register_on_player_receive_fields(function(player, formname, fields)
+    if formname ~= "human_fortress:reward" then return end
+    
+    local name = player:get_player_name()
+    local inv_name = "hf_reward_" .. name
+    local inv = minetest.get_inventory({type = "detached", name = inv_name})
+    
+    if inv then
+        -- Переносимо залишки в інвентар гравця
+        local leftover = inv:get_list("main")
+        local player_inv = player:get_inventory()
+        
+        for _, stack in ipairs(leftover) do
+            if not stack:is_empty() then
+                if player_inv:room_for_item("main", stack) then
+                    player_inv:add_item("main", stack)
+                else
+                    minetest.add_item(player:get_pos(), stack)
+                    minetest.chat_send_player(name, "⚠️ " .. stack:get_count() .. " ейдосів випало (інвентар повний)!")
+                end
+            end
+        end
+        
+        minetest.remove_detached_inventory(inv_name)
+    end
+    
+    if fields.quit then
+        minetest.chat_send_player(name, "🎁 Нагорода забрана!")
+    end
+end)
+
 -- 3. Логіка гри Квіткагейм
 human_fortress.game_data = {}
 
@@ -91,7 +161,6 @@ function human_fortress.show_sequence(name)
     data.sequence = {}
     data.player_input = {}
     
-    -- Кількість кроків збільшується з кожним раундом для інтересу (або залиш фіксовано 4)
     local steps = 3 + data.round 
     
     for i = 1, steps do
@@ -99,7 +168,6 @@ function human_fortress.show_sequence(name)
         table.insert(data.sequence, rand_idx)
         
         minetest.after(i * 0.8, function()
-            -- Перевіка, чи гравець ще в грі
             if human_fortress.game_data[name] then
                 local p = data.block_positions[rand_idx]
                 minetest.set_node(p, {name = "human_fortress:wool_game_active"})
@@ -145,18 +213,11 @@ function human_fortress.check_game_step(pos, player)
                 human_fortress.show_sequence(name) 
             end)
         else
-            -- ПЕРЕМОГА
+            -- ПЕРЕМОГА — ФОРМСПЕКС З НАГОРОДОЮ
             local reward_count = math.random(6, 20)
-            local stack = ItemStack({name = "human_fortress:edos", count = reward_count})
-            local receiver = player:get_inventory()
             
-            if receiver:room_for_item("main", stack) then
-                receiver:add_item("main", stack)
-                minetest.chat_send_player(name, "🎉 Перемога! Отримано " .. reward_count .. " едосів.")
-            else
-                minetest.add_item(player:get_pos(), stack)
-                minetest.chat_send_player(name, "🎉 Перемога! Едоси випали поруч (інвентар повний).")
-            end
+            minetest.chat_send_player(name, "🎉 Перемога! Забери нагороду!")
+            human_fortress.show_reward_formspec(player, reward_count)
             
             minetest.after(0.5, function()
                 player:set_pos(data.flower_pos)
@@ -173,9 +234,8 @@ end
 -- ДРУГА МІНІ-ГРА: ЛОГІЧНІ БЛОКИ (5 В РЯД)
 -- ============================================
 
--- Функція перевірки перемоги (Виправлена!)
+-- Функція перевірки перемоги
 local function check_minigame_win(pos, player, teleporter_pos)
-    -- Шукаємо саме ті 5 конкретних блоків, які спавнилися від центральної точки телепорту
     if not teleporter_pos then return end
     
     local target_y = teleporter_pos.y - 10
@@ -183,14 +243,13 @@ local function check_minigame_win(pos, player, teleporter_pos)
     local first_param2 = nil
     local positions = {}
 
-    -- Ми точно знаємо де вони спавнились: x від +1 до +5, z + 2
     for i = 1, 5 do
         local check_pos = {x = teleporter_pos.x + i, y = target_y, z = teleporter_pos.z + 2}
         table.insert(positions, check_pos)
         
         local node = minetest.get_node(check_pos)
         if node.name ~= "human_fortress:logic_block" then
-            return -- Якщо хоч один блок зламано, виходимо
+            return
         end
         
         if first_param2 == nil then
@@ -202,24 +261,14 @@ local function check_minigame_win(pos, player, teleporter_pos)
         end
     end
 
-    -- Якщо всі 5 блоків мають однаковий поворот — ПЕРЕМОГА!
     if all_same then
         local count = math.random(5, 14)
-        local inv = player:get_inventory()
-        local stack = ItemStack("human_fortress:edos " .. count)
         
-        if inv:room_for_item("main", stack) then
-            inv:add_item("main", stack)
-        else
-            minetest.add_item(player:get_pos(), stack)
-        end
+        minetest.chat_send_player(player:get_player_name(), "🎉 Перемога! Забери нагороду!")
+        human_fortress.show_reward_formspec(player, count)
 
-        minetest.chat_send_player(player:get_player_name(), "🎉 Перемога! Отримано " .. count .. " ейдосів.")
-
-        -- Телепортація назад
         player:set_pos({x = teleporter_pos.x, y = teleporter_pos.y + 1, z = teleporter_pos.z})
 
-        -- Видаляємо блоки
         for _, p in ipairs(positions) do
             minetest.remove_node(p)
         end
@@ -252,7 +301,6 @@ minetest.register_node("human_fortress:tel0eporter", {
         local target = {x = pos.x, y = pos.y - 10, z = pos.z}
         clicker:set_pos(target)
 
-        -- Рандомно спавним блоки з поворотом 0 або 1
         for i = 1, 5 do
             local b_pos = {x = target.x + i, y = target.y, z = target.z + 2}
             minetest.set_node(b_pos, {
@@ -260,7 +308,6 @@ minetest.register_node("human_fortress:tel0eporter", {
                 param2 = math.random(0, 1)
             })
             local b_meta = minetest.get_meta(b_pos)
-            -- Записуємо позицію самого телепортера в кожен блок
             b_meta:set_string("teleport_pos", minetest.serialize(pos))
         end
         

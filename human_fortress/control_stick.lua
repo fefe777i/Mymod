@@ -4,7 +4,7 @@
 
 local cmd_mode = {}
 local storage = minetest.get_mod_storage()
-local exit_command_mode -- forward declaration, визначається нижче
+local exit_command_mode
 
 local function save_cmd_mode(name)
     if cmd_mode[name] then
@@ -22,53 +22,114 @@ local function load_cmd_mode(name)
 end
 
 -- ============================================
--- ДАНІ ПРО БУДІВЛІ (без кастомних моделей-голограм!)
--- Прев'ю тепер малюється на клієнті через фантомні блоки (ghost nodes),
--- тому НЕ потрібно робити .obj/.png для кожної будівлі окремо.
--- Просто вкажи, яким існуючим блоком показувати прев'ю для кожного типу.
+-- ЧЕРГА КОМАНД ДЛЯ СПЛЯЧИХ ЧАНКІВ
+-- ============================================
+if not human_fortress.pending_commands then
+    human_fortress.pending_commands = {}
+end
+
+minetest.register_globalstep(function(dtime)
+    local now = os.time()
+    for uid, cmd in pairs(human_fortress.pending_commands) do
+        if cmd.timestamp and (now - cmd.timestamp) > 300 then
+            human_fortress.pending_commands[uid] = nil
+        end
+    end
+end)
+
+local function find_unit_by_id(unit_id)
+    if not unit_id then return nil, nil end
+    for _, player in ipairs(minetest.get_connected_players()) do
+        local objs = minetest.get_objects_inside_radius(player:get_pos(), 300)
+        for _, obj in ipairs(objs) do
+            local ent = obj:get_luaentity()
+            if ent and ent.unit_data and ent.unit_data.unit_id == unit_id then
+                return obj, ent
+            end
+        end
+    end
+    return nil, nil
+end
+
+local function get_selected_unit_ids(player)
+    local name = player:get_player_name()
+    if not human_fortress.players or not human_fortress.players[name] then return {} end
+    return human_fortress.players[name].selected_ids or {}
+end
+
+local function set_selected_unit_ids(player, ids)
+    local name = player:get_player_name()
+    if not human_fortress.players then human_fortress.players = {} end
+    if not human_fortress.players[name] then human_fortress.players[name] = {selected_ids = {}} end
+    human_fortress.players[name].selected_ids = ids
+end
+
+local function send_command_to_selected(player, command, target)
+    local name = player:get_player_name()
+    local ids = get_selected_unit_ids(player)
+    if #ids == 0 then
+        minetest.chat_send_player(name, "⚠️ Немає виділених юнітів!")
+        return 0, 0
+    end
+
+    local sent = 0
+    local queued = 0
+
+    for _, unit_id in ipairs(ids) do
+        local obj, ent = find_unit_by_id(unit_id)
+        if ent then
+            ent.unit_data = ent.unit_data or {}
+            ent.unit_data.command = command
+            ent.unit_data.target = target
+            sent = sent + 1
+        else
+            human_fortress.pending_commands[unit_id] = {
+                command = command,
+                target = target,
+                timestamp = os.time(),
+            }
+            queued = queued + 1
+        end
+    end
+
+    if sent > 0 then
+        minetest.chat_send_player(name, "📡 Команду відправлено " .. sent .. " юнітам")
+    end
+    if queued > 0 then
+        minetest.chat_send_player(name, "⏳ " .. queued .. " юнітів у сплячих чанках — команда виконається при завантаженні")
+    end
+    return sent, queued
+end
+
+-- ============================================
+-- ДАНІ ПРО БУДІВЛІ
 -- ============================================
 
 local BUILDING_PREVIEWS = {
     townhall = { label = "🏛️ Ратуша",  preview_node = "default:brick" },
-    farm     = { label = "🌾 Ферма",   preview_node = "default:dirt_with_grass" },
+    rice_field     = { label = "🌾 Ферма",   preview_node = "default:dirt_with_grass" },
     barracks = { label = "⚔️ Казарми", preview_node = "default:stonebrick" },
     wall     = { label = "🧱 Стіна",   preview_node = "default:stonebrick" },
     tower    = { label = "🗼 Вежа",    preview_node = "default:stone" },
     house    = { label = "🏠 Дім",     preview_node = "default:wood" },
     market   = { label = "🏪 Ринок",   preview_node = "default:junglewood" },
 }
--- ^ Заміни preview_node на будь-який реальний зареєстрований нод, який
---   виглядає доречно для конкретної будівлі (можна навіть використати
---   головний матеріал зі схеми будівлі, якщо знаєш його).
 
 -- ============================================
--- МІСТ ДО КЛІЄНТА: MOD CHANNEL ДЛЯ ФАНТОМНИХ БЛОКІВ
--- Сервер НЕ може напряму викликати core.set_ghost_node (це CSM-функція,
--- вона існує лише в клієнтських модах). Тому сервер надсилає повідомлення
--- через mod channel, а окремий клієнтський мод (CSM) його приймає і сам
--- викликає core.set_ghost_node/clear_ghost_nodes.
--- Дивись файл human_fortress_ghost_csm/init.lua - його треба покласти
--- в ТЕКУ КЛІЄНТСЬКИХ МОДІВ (client-side mods), а не в звичайні mods/!
--- ============================================
-
--- ============================================
--- ФАНТОМНИЙ БЛОК ЧЕРЕЗ ENTITY (visual = "wielditem")
--- Той самий спосіб, яким рендеряться викинуті предмети - надійний,
--- вбудований, не потребує ані CSM, ані змін в рушії.
--- Кубічний нод виглядає ІДЕНТИЧНО реальному блоку такого типу.
+-- ФАНТОМНИЙ БЛОК
 -- ============================================
 
 minetest.register_entity("human_fortress:ghost_preview", {
     initial_properties = {
         visual = "wielditem",
         wield_item = "air",
-        visual_size = { x = 1.0, y = 1.0 }, -- 1.0 = повний розмір ноду (не як у викинутого предмета 0.4)
+        visual_size = { x = 1.0, y = 1.0 },
         physical = false,
         collide_with_objects = false,
         pointable = false,
-        static_save = false, -- не зберігати між рестартами світу
+        static_save = false,
         glow = 6,
-        color = "#FFFFFF9A", -- спроба напівпрозорості (може не спрацювати на всіх типах нодів)
+        color = "#FFFFFF9A",
     },
     on_activate = function(self)
         self.object:set_armor_groups({ immortal = 1 })
@@ -76,8 +137,7 @@ minetest.register_entity("human_fortress:ghost_preview", {
 })
 
 -- ============================================
--- ХУД-КНОПКИ ЗАМІСТЬ ХОТБАРУ (сенсорні кнопки)
--- Потребує рушій з touchable HUD (workshop47 fork)
+-- ХУД-КНОПКИ
 -- ============================================
 
 local MAIN_BUTTONS = {
@@ -159,7 +219,6 @@ core.register_on_hud_touch(function(player, hud_element_name)
         return
     end
 
-    -- Кнопки, що виконуються одразу (не потребують націлювання)
     if b.tool == "human_fortress:build_confirm" then
         select_tool(player, b.tool)
         local def = minetest.registered_tools[b.tool]
@@ -179,42 +238,16 @@ core.register_on_hud_touch(function(player, hud_element_name)
         return
     end
 
-    -- Кнопки, що потребують націлювання: озброюємо і чекаємо на тап по екрану
     select_tool(player, b.tool)
     minetest.chat_send_player(name, "🎯 Вибрано: " .. key .. " — тапни по цілі на екрані")
 end)
 
 -- ============================================
--- ДОПОМІЖНІ ФУНКЦІЇ ДЛЯ ЮНІТІВ
+-- ПРЕВ'Ю БУДІВЕЛЬ
 -- ============================================
 
-local function get_selected_units(player)
-    local name = player:get_player_name()
-    if not human_fortress.players or not human_fortress.players[name] then return {} end
-    return human_fortress.players[name].selected or {}
-end
-
-local function set_selected_units(player, units)
-    local name = player:get_player_name()
-    if not human_fortress.players then human_fortress.players = {} end
-    if not human_fortress.players[name] then human_fortress.players[name] = {units = {}, selected = {}} end
-    human_fortress.players[name].selected = units
-end
-
--- ============================================
--- СИСТЕМА ПРЕВ'Ю: ПОСТАВИТИ / ПРИБРАТИ / ПЕРЕМІСТИТИ
--- Тепер це суто клієнтський фантом - сервер лише повідомляє клієнта,
--- що і де показати. Мапа сервера НІКОЛИ не змінюється прев'ю-блоками.
--- ============================================
-
--- ============================================
--- ЧИТАННЯ СХЕМИ Й ПОКАЗ УСІХ ЇЇ БЛОКІВ ЯК ФАНТОМІВ
--- ============================================
-
--- Підбери ці два числа під свою збірку дослідним шляхом:
-local GHOST_VISUAL_SIZE = 1.0   -- 1.0 = "нібито повний блок"; зменш якщо завеликий
-local GHOST_POS_OFFSET  = 0.5   -- зсув до центру ноду; постав 0, якщо фантоми "між блоків"
-
+local GHOST_VISUAL_SIZE = 1.0
+local GHOST_POS_OFFSET  = 0.5
 local SCHEMATIC_CACHE = {}
 
 local function get_schematic_data(building_type)
@@ -232,9 +265,6 @@ local function get_schematic_data(building_type)
     return SCHEMATIC_CACHE[building_type]
 end
 
--- Повертає {x_out, z_out} з урахуванням повороту навколо Y - та сама
--- математика, яку рушій використовує в minetest.place_schematic, щоб
--- фантом точно збігався з реальним результатом будівництва.
 local function rotate_xz(x, z, sx, sz, rotation)
     if rotation == 90 then
         return z, sx - 1 - x
@@ -246,8 +276,6 @@ local function rotate_xz(x, z, sx, sz, rotation)
     return x, z
 end
 
--- Повертає список { {pos=v3s16, node=name}, ... } - усі реальні (не
--- air/ignore) блоки схеми, вже зі зміщенням pos і врахованим поворотом.
 local function get_ghost_blocks(building_type, anchor_pos, rotation)
     local data = get_schematic_data(building_type)
     if not data then return {} end
@@ -255,7 +283,7 @@ local function get_ghost_blocks(building_type, anchor_pos, rotation)
     local sx, sy, sz = data.size.x, data.size.y, data.size.z
     local blocks = {}
 
-    local i = 1 -- Lua-таблиці 1-індексовані
+    local i = 1
     for z = 0, sz - 1 do
         for y = 0, sy - 1 do
             for x = 0, sx - 1 do
@@ -263,7 +291,7 @@ local function get_ghost_blocks(building_type, anchor_pos, rotation)
                 i = i + 1
                 if cell and cell.name ~= "air" and cell.name ~= "ignore" then
                     local prob = cell.prob or cell.param1 or 255
-                    if prob > 1 then -- 0 і 1 = блок ніколи не з'явиться
+                    if prob > 1 then
                         local ox, oz = rotate_xz(x, z, sx, sz, rotation)
                         table.insert(blocks, {
                             pos = {
@@ -282,7 +310,6 @@ local function get_ghost_blocks(building_type, anchor_pos, rotation)
     return blocks
 end
 
--- Прибрати всі фантомні блоки гравця
 local function clear_preview(player_name)
     local pdata = cmd_mode[player_name]
     if not pdata then return end
@@ -297,7 +324,6 @@ local function clear_preview(player_name)
     pdata.preview_pos = nil
 end
 
--- Показати повний фантомний контур будівлі на новій позиції
 local function place_preview(player_name, pos)
     local pdata = cmd_mode[player_name]
     if not pdata or not pdata.build then return end
@@ -316,7 +342,6 @@ local function place_preview(player_name, pos)
     local blocks = get_ghost_blocks(btype, pos, rotation)
 
     if #blocks == 0 then
-        -- Немає схеми (ще не зроблена) - показуємо хоча б один маркер
         local center = {
             x = pos.x + GHOST_POS_OFFSET,
             y = pos.y + GHOST_POS_OFFSET,
@@ -358,7 +383,7 @@ local function place_preview(player_name, pos)
 end
 
 -- ============================================
--- ФІНАЛЬНЕ БУДІВНИЦТВО ЧЕРЕЗ MTS ФАЙЛИ
+-- БУДІВНИЦТВО
 -- ============================================
 
 local function build_structure(player_name, building_type, pos, rotation)
@@ -369,8 +394,6 @@ local function build_structure(player_name, building_type, pos, rotation)
     local schematic = BUILDING_SCHEMATICS[building_type]
     rotation = rotation or 0
 
-    -- Перевірка місця (фантомний блок ніколи не був реальним нодом на мапі,
-    -- тож тут дивимось лише на те, що там реально лежить)
     local cur = minetest.get_node(pos)
     if cur.name ~= "air" and
        cur.name ~= "default:grass_1" and
@@ -379,7 +402,6 @@ local function build_structure(player_name, building_type, pos, rotation)
         return false
     end
 
-    -- Списання ресурсів (якщо є)
     if human_fortress.edos_data and human_fortress.edos_data[player_name] and schematic.cost then
         local resources = human_fortress.edos_data[player_name]
         for res, amount in pairs(schematic.cost) do
@@ -418,10 +440,6 @@ local function build_structure(player_name, building_type, pos, rotation)
     return true
 end
 
--- ============================================
--- ІНВЕНТАРІ
--- ============================================
-
 local function give_build_inventory(player, building_type)
     local name = player:get_player_name()
     if not cmd_mode[name] then cmd_mode[name] = {} end
@@ -452,7 +470,7 @@ local function give_command_inventory(player)
 end
 
 -- ============================================
--- ВХІД / ВИХІД З РЕЖИМУ КОМАНДУВАННЯ
+-- ВХІД / ВИХІД
 -- ============================================
 
 local function enter_command_mode(player)
@@ -507,10 +525,6 @@ exit_command_mode = function(player)
     minetest.chat_send_player(name, "🚪 Вийшли з режиму командування")
 end
 
--- ============================================
--- TOGGLE
--- ============================================
-
 function toggle_command_mode(player)
     local name = player:get_player_name()
     if cmd_mode[name] then
@@ -531,10 +545,6 @@ local function apply_fly_mode(player)
     minetest.set_player_privs(name, privs)
 end
 
--- ============================================
--- ОБМЕЖЕННЯ ПОЛЬОТУ (30 блоків вгору)
--- ============================================
-
 minetest.register_globalstep(function(dtime)
     for name, data in pairs(cmd_mode) do
         local player = minetest.get_player_by_name(name)
@@ -551,10 +561,6 @@ minetest.register_globalstep(function(dtime)
         end
     end
 end)
-
--- ============================================
--- ЗБЕРЕЖЕННЯ ПРИ ВИХОДІ / ВІДНОВЛЕННЯ ПРИ ВХОДІ
--- ============================================
 
 minetest.register_on_leaveplayer(function(player)
     local name = player:get_player_name()
@@ -594,46 +600,48 @@ minetest.register_tool("human_fortress:cmd_select", {
         local name = user:get_player_name()
         if not cmd_mode[name] then return end
         local ctrl = user:get_player_control()
-        local selected = {}
+        local selected_ids = {}
 
-        if pointed_thing and pointed_thing.type == "node" then
-            local pos = pointed_thing.under
-            if ctrl.aux1 then
-                if human_fortress.players and human_fortress.players[name] then
-                    for id, unit in pairs(human_fortress.players[name].units or {}) do
-                        if unit and unit.object then table.insert(selected, id) end
-                    end
+        if ctrl.aux1 then
+            local player_pos = user:get_pos()
+            local objs = minetest.get_objects_inside_radius(player_pos, 100)
+            for _, obj in ipairs(objs) do
+                local ent = obj:get_luaentity()
+                if ent and ent.unit_data and ent.unit_data.owner == name and ent.unit_data.unit_id then
+                    table.insert(selected_ids, ent.unit_data.unit_id)
                 end
-                minetest.chat_send_player(name, "✅ Виділено ВСІХ юнітів: " .. #selected)
-            else
-                if human_fortress.players and human_fortress.players[name] then
-                    for id, unit in pairs(human_fortress.players[name].units or {}) do
-                        if unit and unit.object then
-                            local upos = unit.object:get_pos()
-                            if upos and vector.distance(pos, upos) < 10 then
-                                table.insert(selected, id)
-                            end
-                        end
-                    end
-                end
-                minetest.chat_send_player(name, "✅ Виділено юнітів: " .. #selected)
             end
-            set_selected_units(user, selected)
+            minetest.chat_send_player(name, "✅ Виділено ВСІХ юнітів: " .. #selected_ids)
+        elseif pointed_thing and pointed_thing.type == "node" then
+            local pos = pointed_thing.under
+            local objs = minetest.get_objects_inside_radius(pos, 10)
+            for _, obj in ipairs(objs) do
+                local ent = obj:get_luaentity()
+                if ent and ent.unit_data and ent.unit_data.owner == name and ent.unit_data.unit_id then
+                    table.insert(selected_ids, ent.unit_data.unit_id)
+                end
+            end
+            minetest.chat_send_player(name, "✅ Виділено юнітів: " .. #selected_ids)
         end
+
+        set_selected_unit_ids(user, selected_ids)
         return itemstack
     end,
 
     on_place = function(itemstack, placer)
         local name = placer:get_player_name()
         if not cmd_mode[name] then return end
-        local selected = {}
-        if human_fortress.players and human_fortress.players[name] then
-            for id, unit in pairs(human_fortress.players[name].units or {}) do
-                if unit and unit.object then table.insert(selected, id) end
+        local selected_ids = {}
+        local player_pos = placer:get_pos()
+        local objs = minetest.get_objects_inside_radius(player_pos, 100)
+        for _, obj in ipairs(objs) do
+            local ent = obj:get_luaentity()
+            if ent and ent.unit_data and ent.unit_data.owner == name and ent.unit_data.unit_id then
+                table.insert(selected_ids, ent.unit_data.unit_id)
             end
         end
-        set_selected_units(placer, selected)
-        minetest.chat_send_player(name, "✅ Виділено ВСІХ юнітів: " .. #selected)
+        set_selected_unit_ids(placer, selected_ids)
+        minetest.chat_send_player(name, "✅ Виділено ВСІХ юнітів: " .. #selected_ids)
         return itemstack
     end
 })
@@ -653,19 +661,10 @@ minetest.register_tool("human_fortress:cmd_move", {
         if pointed_thing and pointed_thing.type == "node" then
             local pos = pointed_thing.under
             local target = { x = pos.x + 0.5, y = pos.y + 1, z = pos.z + 0.5 }
-            local selected = get_selected_units(user)
-            if #selected == 0 then
-                minetest.chat_send_player(name, "❌ Немає виділених юнітів!")
-                return itemstack
+            local sent, queued = send_command_to_selected(user, "move", target)
+            if sent + queued > 0 then
+                minetest.chat_send_player(name, "🚶 Рух: " .. (sent + queued) .. " юнітів")
             end
-            for _, id in ipairs(selected) do
-                local unit = human_fortress.players[name].units[id]
-                if unit and unit.object then
-                    unit.unit_data.command = "move"
-                    unit.unit_data.target = target
-                end
-            end
-            minetest.chat_send_player(name, "🚶 Рух: " .. #selected .. " юнітів")
         end
         return itemstack
     end
@@ -699,19 +698,10 @@ minetest.register_tool("human_fortress:cmd_gather", {
             end
 
             if is_resource then
-                local selected = get_selected_units(user)
-                if #selected == 0 then
-                    minetest.chat_send_player(name, "❌ Немає виділених юнітів!")
-                    return itemstack
+                local sent, queued = send_command_to_selected(user, "gather", pos)
+                if sent + queued > 0 then
+                    minetest.chat_send_player(name, "📦 Збір: " .. (sent + queued) .. " юнітів")
                 end
-                for _, id in ipairs(selected) do
-                    local unit = human_fortress.players[name].units[id]
-                    if unit and unit.object then
-                        unit.unit_data.command = "gather"
-                        unit.unit_data.target = pos
-                    end
-                end
-                minetest.chat_send_player(name, "📦 Збір: " .. #selected .. " юнітів")
             else
                 minetest.chat_send_player(name, "❌ Це не ресурс!")
             end
@@ -721,7 +711,7 @@ minetest.register_tool("human_fortress:cmd_gather", {
 })
 
 -- ============================================
--- 4. БУДІВНИЦТВО — відкриває меню вибору будівлі
+-- 4. БУДІВНИЦТВО
 -- ============================================
 
 local function get_player_upgrades(name)
@@ -730,7 +720,6 @@ local function get_player_upgrades(name)
     if not file then return {} end
     local content = file:read("*all")
     file:close()
-
     local data = minetest.parse_json(content) or {}
     return data[name] or {}
 end
@@ -822,19 +811,10 @@ minetest.register_tool("human_fortress:cmd_attack", {
         end
 
         if target_pos then
-            local selected = get_selected_units(user)
-            if #selected == 0 then
-                minetest.chat_send_player(name, "❌ Немає виділених юнітів!")
-                return itemstack
+            local sent, queued = send_command_to_selected(user, "attack", target_pos)
+            if sent + queued > 0 then
+                minetest.chat_send_player(name, "⚔️ Атака: " .. (sent + queued) .. " юнітів")
             end
-            for _, id in ipairs(selected) do
-                local unit = human_fortress.players[name].units[id]
-                if unit and unit.object then
-                    unit.unit_data.command = "attack"
-                    unit.unit_data.target = target_pos
-                end
-            end
-            minetest.chat_send_player(name, "⚔️ Атака: " .. #selected .. " юнітів")
         end
         return itemstack
     end
@@ -854,19 +834,10 @@ minetest.register_tool("human_fortress:cmd_enter", {
 
         if pointed_thing and pointed_thing.type == "node" then
             local pos = pointed_thing.under
-            local selected = get_selected_units(user)
-            if #selected == 0 then
-                minetest.chat_send_player(name, "❌ Немає виділених юнітів!")
-                return itemstack
+            local sent, queued = send_command_to_selected(user, "enter", pos)
+            if sent + queued > 0 then
+                minetest.chat_send_player(name, "🚪 Вхід: " .. (sent + queued) .. " юнітів")
             end
-            for _, id in ipairs(selected) do
-                local unit = human_fortress.players[name].units[id]
-                if unit and unit.object then
-                    unit.unit_data.command = "enter"
-                    unit.unit_data.target = pos
-                end
-            end
-            minetest.chat_send_player(name, "🚪 Вхід: " .. #selected .. " юнітів")
         end
         return itemstack
     end
@@ -886,19 +857,10 @@ minetest.register_tool("human_fortress:cmd_repair", {
 
         if pointed_thing and pointed_thing.type == "node" then
             local pos = pointed_thing.under
-            local selected = get_selected_units(user)
-            if #selected == 0 then
-                minetest.chat_send_player(name, "❌ Немає виділених юнітів!")
-                return itemstack
+            local sent, queued = send_command_to_selected(user, "repair", pos)
+            if sent + queued > 0 then
+                minetest.chat_send_player(name, "🔧 Ремонт: " .. (sent + queued) .. " юнітів")
             end
-            for _, id in ipairs(selected) do
-                local unit = human_fortress.players[name].units[id]
-                if unit and unit.object then
-                    unit.unit_data.command = "repair"
-                    unit.unit_data.target = pos
-                end
-            end
-            minetest.chat_send_player(name, "🔧 Ремонт: " .. #selected .. " юнітів")
         end
         return itemstack
     end
@@ -942,7 +904,7 @@ minetest.register_tool("human_fortress:cmd_exit", {
 })
 
 -- ============================================
--- БУДІВЕЛЬНІ ІНСТРУМЕНТИ (після вибору будівлі)
+-- БУДІВЕЛЬНІ ІНСТРУМЕНТИ
 -- ============================================
 
 minetest.register_tool("human_fortress:build_move", {
@@ -1061,4 +1023,4 @@ minetest.after(5, function()
     end
 end)
 
-print("[Human Fortress] Система керування завантажена (фантомні блоки замість моделей)!")
+print("[Human Fortress] Система керування завантажена (стійка до вивантаження чанків)!")

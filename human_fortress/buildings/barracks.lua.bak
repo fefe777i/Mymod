@@ -1,0 +1,718 @@
+
+-- ============================================
+-- БУДІВЛЯ: КАЗАРМИ (barracks.lua)
+-- ============================================
+
+local storage = minetest.get_mod_storage()
+
+-- ============================================
+-- АПГРЕЙДИ З JSON
+-- ============================================
+
+local function get_player_upgrades_from_json(player_name)
+    local world_path = minetest.get_worldpath()
+    local upgrades_file = world_path .. "/upgrades.json"
+
+    local file = io.open(upgrades_file, "r")
+    if not file then
+        return {}
+    end
+
+    local content = file:read("*all")
+    file:close()
+
+    local data = minetest.parse_json(content) or {}
+    return data[player_name] or {}
+end
+
+-- ============================================
+-- РЕСУРСИ
+-- ============================================
+
+local function get_player_resources(player_name)
+    local data = human_fortress.edos_data and human_fortress.edos_data[player_name]
+
+    if not data then
+        return {
+            score = 0,
+            wood = 0,
+            stone = 0,
+            food = 0
+        }
+    end
+
+    return {
+        score = data.score or 0,
+        wood = data.wood or 0,
+        stone = data.stone or 0,
+        food = data.food or 0
+    }
+end
+
+-- ============================================
+-- СПИСАННЯ РЕСУРСІВ
+-- ============================================
+
+local function take_resources(player_name, cost)
+    local data = human_fortress.edos_data and human_fortress.edos_data[player_name]
+
+    if not data then
+        return false
+    end
+
+    for res, amount in pairs(cost) do
+        if (data[res] or 0) < amount then
+            return false
+        end
+    end
+
+    for res, amount in pairs(cost) do
+        data[res] = (data[res] or 0) - amount
+    end
+
+    return true
+end
+
+-- ============================================
+-- ПЕРЕВІРКА РЕСУРСІВ
+-- ============================================
+
+local function has_resources(player_name, cost)
+    local resources = get_player_resources(player_name)
+
+    for res, amount in pairs(cost) do
+        if (resources[res] or 0) < amount then
+            return false
+        end
+    end
+
+    return true
+end
+
+-- ============================================
+-- ДАНІ БУДІВЛІ
+-- ============================================
+
+local building_data = {
+    name = "⚔️ Казарми",
+    description = "Тренування воїнів та лучників",
+
+    level = 2,
+
+    cost = {
+        score = 200,
+        wood = 100,
+        stone = 50
+    },
+
+    schematic = "barracks.mts",
+
+    icon = "human_fortress_barracks.png",
+    color = "#CD5C5C",
+    unlock_required = "barracks",
+
+    -- Позиція комп'ютера відносно початкової позиції MTS
+    on_built = function(player_name, pos)
+
+        local computer_pos = {
+            x = pos.x + 1,
+            y = pos.y + 1,
+            z = pos.z + 1
+        }
+
+        minetest.set_node(computer_pos, {
+            name = "human_fortress:building_computer"
+        })
+
+        local meta = minetest.get_meta(computer_pos)
+
+        meta:set_string("building_type", "barracks")
+        meta:set_string("owner", player_name)
+
+        meta:set_string(
+            "building_pos",
+            minetest.serialize(pos)
+        )
+
+        meta:set_int(
+            "building_cost",
+            building_data.cost.score
+        )
+
+        meta:set_string(
+            "infotext",
+            "⚔️ Казарми\nВласник: " ..
+            player_name ..
+            "\nПКМ - меню"
+        )
+
+        if not human_fortress.buildings then
+            human_fortress.buildings = {}
+        end
+
+        if not human_fortress.buildings[player_name] then
+            human_fortress.buildings[player_name] = {}
+        end
+
+        table.insert(
+            human_fortress.buildings[player_name],
+            {
+                type = "barracks",
+                pos = pos
+            }
+        )
+
+        minetest.chat_send_player(
+            player_name,
+            "⚔️ Казарми побудовані! Натисни ПКМ на комп'ютері."
+        )
+    end
+}
+
+-- ============================================
+-- ЗНИЩЕННЯ БУДІВЛІ
+-- ============================================
+
+local function destroy_building(player_name, computer_pos)
+
+    local meta = minetest.get_meta(computer_pos)
+    local owner = meta:get_string("owner")
+
+    if owner ~= player_name then
+        minetest.chat_send_player(
+            player_name,
+            "❌ Це чужа будівля!"
+        )
+        return false
+    end
+
+    local building_type = meta:get_string("building_type")
+
+    local building_pos = minetest.deserialize(
+        meta:get_string("building_pos")
+    )
+
+    local building_cost = meta:get_int("building_cost")
+
+    if not building_pos then
+        minetest.chat_send_player(
+            player_name,
+            "❌ Помилка даних будівлі!"
+        )
+        return false
+    end
+
+    local refund = math.floor(building_cost * 0.7)
+
+    if human_fortress.edos_data
+    and human_fortress.edos_data[player_name] then
+
+        human_fortress.edos_data[player_name].score =
+            (human_fortress.edos_data[player_name].score or 0)
+            + refund
+    end
+
+    if minetest.get_node(computer_pos).name ==
+        "human_fortress:building_computer" then
+
+        minetest.remove_node(computer_pos)
+    end
+
+    if human_fortress.buildings
+    and human_fortress.buildings[player_name] then
+
+        for i, b in ipairs(
+            human_fortress.buildings[player_name]
+        ) do
+
+            if b.type == building_type
+            and vector.equals(b.pos, building_pos) then
+
+                table.remove(
+                    human_fortress.buildings[player_name],
+                    i
+                )
+
+                break
+            end
+        end
+    end
+
+    minetest.chat_send_player(
+        player_name,
+        "💥 Будівлю знищено, повернено " ..
+        refund ..
+        " EDOS"
+    )
+
+    return true
+end
+
+-- ============================================
+-- МЕНЮ КАЗАРМИ
+-- ============================================
+
+function BUILDING_MENUS.barracks(player_name, computer_pos)
+
+    local meta = minetest.get_meta(computer_pos)
+
+    local owner = meta:get_string("owner")
+
+    if owner ~= player_name then
+        minetest.chat_send_player(
+            player_name,
+            "❌ Це чужа будівля!"
+        )
+        return
+    end
+
+    local tmp =
+        minetest.deserialize(
+            storage:get_string("tmp_computer")
+        ) or {}
+
+    tmp[player_name] = computer_pos
+
+    storage:set_string(
+        "tmp_computer",
+        minetest.serialize(tmp)
+    )
+
+    local upgrades =
+        get_player_upgrades_from_json(player_name)
+
+    local resources =
+        get_player_resources(player_name)
+
+    local formspec =
+        "size[6,10]" ..
+        "bgcolor[#0A0A1A;true]" ..
+        "box[0,0;6,0.8;#2D2D44]" ..
+        "label[0.5,0.2;⚔️ КАЗАРМИ]" ..
+        "label[4,0.2;💰 " ..
+        (resources.score or 0) ..
+        "]"
+
+    local y = 1.2
+
+    -- ============================================
+    -- ВОЇН
+    -- ============================================
+
+    local warrior_cost = {
+        wood = 30,
+        stone = 40,
+        food = 50
+    }
+
+    local warrior_text =
+        "⚔️ Воїн (30 дер, 40 кам, 50 їжі)"
+
+    if not has_resources(
+        player_name,
+        warrior_cost
+    ) then
+
+        warrior_text =
+            warrior_text ..
+            " ❌"
+    end
+
+    formspec = formspec ..
+        "button[0.5," ..
+        y ..
+        ";5,0.8;spawn_warrior;" ..
+        warrior_text ..
+        "]"
+
+    y = y + 0.9
+
+    -- ============================================
+    -- САМУРАЙ
+    -- ============================================
+
+    if upgrades.blacksmith then
+
+        local samurai_cost = {
+            wood = 50,
+            stone = 50,
+            food = 70
+        }
+
+        local samurai_text =
+            "⚔️ Самурай (50 дер, 50 кам, 70 їжі)"
+
+        if not has_resources(
+            player_name,
+            samurai_cost
+        ) then
+
+            samurai_text =
+                samurai_text ..
+                " ❌"
+        end
+
+        formspec = formspec ..
+            "button[0.5," ..
+            y ..
+            ";5,0.8;spawn_samurai;" ..
+            samurai_text ..
+            "]"
+
+    else
+
+        formspec = formspec ..
+            "label[0.5," ..
+            y ..
+            ";🔒 Самурай (потрібна Кузня)]"
+    end
+
+    y = y + 0.9
+
+    -- ============================================
+    -- ЛУЧНИК
+    -- ============================================
+
+    if upgrades.archery then
+
+        local archer_cost = {
+            wood = 40,
+            food = 40
+        }
+
+        local archer_text =
+            "🏹 Лучник (40 дер, 40 їжі)"
+
+        if not has_resources(
+            player_name,
+            archer_cost
+        ) then
+
+            archer_text =
+                archer_text ..
+                " ❌"
+        end
+
+        formspec = formspec ..
+            "button[0.5," ..
+            y ..
+            ";5,0.8;spawn_archer;" ..
+            archer_text ..
+            "]"
+
+    else
+
+        formspec = formspec ..
+            "label[0.5," ..
+            y ..
+            ";🔒 Лучник (потрібне Стрільбище)]"
+    end
+
+    formspec = formspec ..
+
+        "button[1,8.5;4,1;destroy_building;💥 ЗНИЩИТИ БУДІВЛЮ]" ..
+
+        "button[2,9.6;2,0.8;close;❌ ЗАКРИТИ]"
+
+    minetest.show_formspec(
+        player_name,
+        "human_fortress:barracks",
+        formspec
+    )
+end
+
+-- ============================================
+-- ОБРОБНИК ПОДІЙ
+-- ============================================
+
+minetest.register_on_player_receive_fields(
+function(player, formname, fields)
+
+    if formname ~= "human_fortress:barracks" then
+        return
+    end
+
+    local player_name =
+        player:get_player_name()
+
+    if not player_name then
+        return
+    end
+
+    local tmp =
+        minetest.deserialize(
+            storage:get_string("tmp_computer")
+        ) or {}
+
+    local computer_pos =
+        tmp[player_name]
+
+    -- ============================================
+    -- ЗАКРИТТЯ
+    -- ============================================
+
+    if fields.close then
+        return true
+    end
+
+    -- ============================================
+    -- ЗНИЩЕННЯ
+    -- ============================================
+
+    if fields.destroy_building then
+
+        if computer_pos then
+
+            destroy_building(
+                player_name,
+                computer_pos
+            )
+
+            tmp[player_name] = nil
+
+            storage:set_string(
+                "tmp_computer",
+                minetest.serialize(tmp)
+            )
+        end
+
+        return true
+    end
+
+    -- ============================================
+    -- ВОЇН
+    -- ============================================
+
+    if fields.spawn_warrior then
+
+        local cost = {
+            wood = 30,
+            stone = 40,
+            food = 50
+        }
+
+        if not has_resources(
+            player_name,
+            cost
+        ) then
+
+            minetest.chat_send_player(
+                player_name,
+                "❌ Недостатньо ресурсів!"
+            )
+
+            BUILDING_MENUS.barracks(
+                player_name,
+                computer_pos
+            )
+
+            return true
+        end
+
+        take_resources(
+            player_name,
+            cost
+        )
+
+        local pos = player:get_pos()
+
+        local spawn_pos = {
+            x = pos.x + 2,
+            y = pos.y + 1,
+            z = pos.z + 2
+        }
+
+        if human_fortress.create_unit then
+
+            human_fortress.create_unit(
+                "warrior",
+                spawn_pos,
+                player_name
+            )
+        end
+
+        BUILDING_MENUS.barracks(
+            player_name,
+            computer_pos
+        )
+
+        return true
+    end
+
+    -- ============================================
+    -- САМУРАЙ
+    -- ============================================
+
+    if fields.spawn_samurai then
+
+        local upgrades =
+            get_player_upgrades_from_json(
+                player_name
+            )
+
+        if not upgrades.blacksmith then
+
+            minetest.chat_send_player(
+                player_name,
+                "❌ Потрібна Кузня!"
+            )
+
+            return true
+        end
+
+        local cost = {
+            wood = 50,
+            stone = 50,
+            food = 70
+        }
+
+        if not has_resources(
+            player_name,
+            cost
+        ) then
+
+            minetest.chat_send_player(
+                player_name,
+                "❌ Недостатньо ресурсів!"
+            )
+
+            BUILDING_MENUS.barracks(
+                player_name,
+                computer_pos
+            )
+
+            return true
+        end
+
+        take_resources(
+            player_name,
+            cost
+        )
+
+        local pos = player:get_pos()
+
+        local spawn_pos = {
+            x = pos.x + 2,
+            y = pos.y + 1,
+            z = pos.z + 2
+        }
+
+        if human_fortress.create_unit then
+
+            if human_fortress.units_list
+            and human_fortress.units_list.samurai then
+
+                human_fortress.create_unit(
+                    "samurai",
+                    spawn_pos,
+                    player_name
+                )
+
+            else
+
+                minetest.chat_send_player(
+                    player_name,
+                    "⚠️ Самурай не доданий в units.lua"
+                )
+
+                human_fortress.create_unit(
+                    "warrior",
+                    spawn_pos,
+                    player_name
+                )
+            end
+        end
+
+        BUILDING_MENUS.barracks(
+            player_name,
+            computer_pos
+        )
+
+        return true
+    end
+
+    -- ============================================
+    -- ЛУЧНИК
+    -- ============================================
+
+    if fields.spawn_archer then
+
+        local upgrades =
+            get_player_upgrades_from_json(
+                player_name
+            )
+
+        if not upgrades.archery then
+
+            minetest.chat_send_player(
+                player_name,
+                "❌ Потрібне Стрільбище!"
+            )
+
+            return true
+        end
+
+        local cost = {
+            wood = 40,
+            food = 40
+        }
+
+        if not has_resources(
+            player_name,
+            cost
+        ) then
+
+            minetest.chat_send_player(
+                player_name,
+                "❌ Недостатньо ресурсів!"
+            )
+
+            BUILDING_MENUS.barracks(
+                player_name,
+                computer_pos
+            )
+
+            return true
+        end
+
+        take_resources(
+            player_name,
+            cost
+        )
+
+        local pos = player:get_pos()
+
+        local spawn_pos = {
+            x = pos.x + 2,
+            y = pos.y + 1,
+            z = pos.z + 2
+        }
+
+        if human_fortress.create_unit then
+
+            human_fortress.create_unit(
+                "archer",
+                spawn_pos,
+                player_name
+            )
+        end
+
+        BUILDING_MENUS.barracks(
+            player_name,
+            computer_pos
+        )
+
+        return true
+    end
+
+    return true
+end)
+
+-- ============================================
+-- ПОВЕРНЕННЯ БУДІВЛІ
+-- ============================================
+
+return {
+    id = "barracks",
+    data = building_data
+}

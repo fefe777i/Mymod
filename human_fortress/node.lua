@@ -140,12 +140,10 @@ local function spawn_gift_drop(receiver_name, gift_index, sender_name)
     if not player then return false end
     
     local pos = player:get_pos()
-    -- Шар з'являється вище гравця з випадковим зміщенням
     pos.y = pos.y + 25
     pos.x = pos.x + math.random(-3, 3)
     pos.z = pos.z + math.random(-3, 3)
     
-    -- Створюємо сутність шара
     local obj = minetest.add_entity(pos, "human_fortress:gift_drop")
     if obj then
         local entity = obj:get_luaentity()
@@ -157,11 +155,9 @@ local function spawn_gift_drop(receiver_name, gift_index, sender_name)
             entity.has_landed = false
             entity.timer = 0
             
-            -- Встановлюємо фізику падіння!
             obj:set_velocity({x = 0, y = -2, z = 0})
             obj:set_acceleration({x = 0, y = -4.81, z = 0})
             
-            -- Ефект появи
             minetest.add_particlespawner({
                 amount = 20,
                 time = 0.5,
@@ -181,7 +177,6 @@ end
 
 -- Надсилання подарунка з падінням
 local function send_gift_with_drop(sender, receiver, gift_index)
-    -- Додаємо запис про подарунок
     local messages = messages_data[receiver] or {}
     table.insert(messages, {
         sender = sender,
@@ -192,7 +187,6 @@ local function send_gift_with_drop(sender, receiver, gift_index)
     })
     messages_data[receiver] = messages
     
-    -- Шанс перехоплення
     if math.random() < INTERCEPT_CHANCE then
         local intercepted_msgs = intercepted[sender] or {}
         table.insert(intercepted_msgs, {
@@ -206,7 +200,6 @@ local function send_gift_with_drop(sender, receiver, gift_index)
         intercepted[sender] = intercepted_msgs
     end
     
-    -- Створюємо падаючий шар через 1 секунду
     minetest.after(1, function()
         spawn_gift_drop(receiver, gift_index, sender)
     end)
@@ -215,7 +208,7 @@ local function send_gift_with_drop(sender, receiver, gift_index)
     return true
 end
 
--- Реєстрація сутності падаючого ШАРА (ОДНА реєстрація!)
+-- Реєстрація сутності падаючого ШАРА
 minetest.register_entity("human_fortress:gift_drop", {
     initial_properties = {
         physical = true,
@@ -243,40 +236,31 @@ minetest.register_entity("human_fortress:gift_drop", {
         local pos = self.object:get_pos()
         if not pos then return end
         
-        -- Красиве обертання шара
         local rot = self.object:get_rotation()
         rot.y = rot.y + 0.02
-        rot.x = rot.x + 0
-        rot.z = rot.z + 0
         self.object:set_rotation(rot)
         
-        -- Перевіряємо швидкість для визначення приземлення
         local vel = self.object:get_velocity()
         if vel and math.abs(vel.y) < 0.1 and not self.has_landed then
             self.has_landed = true
             
-            -- Зупиняємо шар
             self.object:set_velocity({x = 0, y = 0, z = 0})
             self.object:set_acceleration({x = 0, y = 0, z = 0})
             
-            -- Ефект розбивання через 0.3 секунди
             minetest.after(1.3, function()
                 if not self.dropped_items and self.gift_data then
                     self.dropped_items = true
                     
-                    -- Випадання предметів
                     for _, item in ipairs(self.gift_data.items) do
                         local item_stack = ItemStack(item.name .. " " .. item.count)
                         minetest.add_item(pos, item_stack)
                     end
                     
-                    -- Повідомлення гравцю
                     if self.receiver then
                         minetest.chat_send_player(self.receiver, 
                             "🎁 Отримано подарунок '" .. self.gift_data.name .. "' від " .. (self.sender or "невідомого"))
                     end
                     
-                    -- Ефект частинок при розбиванні
                     minetest.add_particlespawner({
                         amount = 50,
                         time = 1,
@@ -294,20 +278,17 @@ minetest.register_entity("human_fortress:gift_drop", {
                         texture = "edos.png",
                     })
                     
-                    -- Видалення сутності
                     self.object:remove()
                 end
             end)
         end
         
-        -- Автовидалення якщо загубився
         if self.timer > 30 then
             self.object:remove()
         end
     end,
     
     on_punch = function(self, puncher)
-        -- Якщо гравець вдарив шар, він прискорює падіння
         if puncher:is_player() and self.receiver and puncher:get_player_name() == self.receiver then
             local vel = self.object:get_velocity()
             self.object:set_velocity({x = vel.x, y = -15, z = vel.z})
@@ -316,7 +297,7 @@ minetest.register_entity("human_fortress:gift_drop", {
     end
 })
 
--- Показ планшета (той самий код)
+-- Показ планшета
 local function show_tablet(player_name, page, target_player)
     local formspec = ""
     local messages, intercepted_msgs = get_player_messages(player_name)
@@ -325,21 +306,15 @@ local function show_tablet(player_name, page, target_player)
         formspec = "size[15,9.5]" ..
             "background[0,0;15,9.5;human_fortress_tablet_bg.png]" ..
             "bgcolor[#1E1E2E;false]" ..
-            
-            -- ОДНА ТЕКСТУРА ДЛЯ ВСІХ КНОПОК
             "style_type[button;bgimg=human_fortress_button_bg.png;text_color=#FFFFFF;border=false]" ..
-            
             "label[0.5,0.2;📡 Вишка]" ..
             "label[0.5,0.8;" .. player_name .. "]" ..
             "image[13.5,0.2;1.2,1.2;human_fortress_tablet_icon.png]" ..
-            
-            
             "button[0.5,2.2;3,0.8;messages;📨 Мої повідомлення]" ..
             "button[0.5,3.2;3,0.8;intercepted;📡 Перехоплені]" ..
             "button[0.5,4.2;3,0.8;send_msg;✉️ Надіслати повідомлення]" ..
             "button[0.5,5.2;3,0.8;send_gift;🎁 Надіслати подарунок]" ..
             "button[0.5,7.2;3,0.8;back;🔙 Вихід]" ..
-            
             "container[4,1.5]" ..
             "box[0,0;10.5,0.5;#3A3A5A]" ..
             "label[0.2,0.1;💬 Система листування]" ..
@@ -356,10 +331,7 @@ local function show_tablet(player_name, page, target_player)
         formspec = "size[15,9.5]" ..
             "background[0,0;15,9.5;human_fortress_tablet_bg.png]" ..
             "bgcolor[#1E1E2E;false]" ..
-            
-            -- ТЕКСТУРА ДЛЯ КНОПКИ НАЗАД
             "style_type[button;bgimg=human_fortress_button_bg.png;text_color=#FFFFFF;border=false]" ..
-            
             "button[0.5,0.5;3,0.8;back;🔙 Назад]" ..
             "label[4,0.5;📨 Мої повідомлення]" ..
             "box[0.5,1.5;14,7;#2D2D44]"
@@ -391,10 +363,7 @@ local function show_tablet(player_name, page, target_player)
         formspec = "size[15,9.5]" ..
             "background[0,0;15,9.5;human_fortress_tablet_bg.png]" ..
             "bgcolor[#1E1E2E;false]" ..
-            
-            -- ТЕКСТУРА ДЛЯ КНОПКИ НАЗАД
             "style_type[button;bgimg=human_fortress_button_bg.png;text_color=#FFFFFF;border=false]" ..
-            
             "button[0.5,0.5;3,0.8;back;🔙 Назад]" ..
             "label[4,0.5;📡 Перехоплені повідомлення]" ..
             "box[0.5,1.5;14,7;#2D2D44]"
@@ -428,10 +397,7 @@ local function show_tablet(player_name, page, target_player)
         formspec = "size[15,9.5]" ..
             "background[0,0;15,9.5;human_fortress_tablet_bg.png]" ..
             "bgcolor[#1E1E2E;false]" ..
-            
-            -- ТЕКСТУРА ДЛЯ ВСІХ КНОПОК
             "style_type[button;bgimg=human_fortress_button_bg.png;text_color=#FFFFFF;border=false]" ..
-            
             "button[0.5,0.5;3,0.8;back;🔙 Назад]" ..
             "label[4,0.5;✉️ Надіслати повідомлення]" ..
             "field[1,2;13,1;receiver;Отримувач:;]" ..
@@ -447,10 +413,7 @@ local function show_tablet(player_name, page, target_player)
         formspec = "size[15,9.5]" ..
             "background[0,0;15,9.5;human_fortress_tablet_bg.png]" ..
             "bgcolor[#1E1E2E;false]" ..
-            
-            -- ТЕКСТУРА ДЛЯ ВСІХ КНОПОК
             "style_type[button;bgimg=human_fortress_button_bg.png;text_color=#FFFFFF;border=false]" ..
-            
             "button[0.5,0.5;3,0.8;back;🔙 Назад]" ..
             "label[4,0.5;🎁 Надіслати подарунок]" ..
             "field[1,1.5;13,1;gift_receiver;Отримувач:;]" ..
@@ -469,9 +432,7 @@ local function show_tablet(player_name, page, target_player)
             
             formspec = formspec .. 
                 "button[" .. x .. "," .. y .. ";4,0.8;gift_" .. i .. ";" .. gift.name .. "]" ..
-                "label[" .. x .. "," .. (y + 0.9) .. ";" .. gift.desc .. "]"
-            
-            formspec = formspec .. 
+                "label[" .. x .. "," .. (y + 0.9) .. ";" .. gift.desc .. "]" ..
                 "box[" .. x .. "," .. (y + 0.85) .. ";4,0.05;" .. gift.color .. "]"
         end
     end
@@ -544,12 +505,19 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         local receiver = fields.receiver or ""
         local message = fields.message or ""
         
+        -- Перевіряємо, чи вводять "брус"
+        if receiver:lower() == "брус" then
+            receiver = "Брус"
+            message = "Брус, зайди в мій світ на хвилиночку — хочу глянути, що в тебе є на продаж."
+        end
+
         if receiver == "" or message == "" then
             minetest.chat_send_player(player_name, "Заповніть усі поля!")
             return
         end
         
-        if not minetest.get_player_by_name(receiver) then
+        -- Пропускаємо перевірку онлайн-статусу для Бруса
+        if receiver ~= "Брус" and not minetest.get_player_by_name(receiver) then
             minetest.chat_send_player(player_name, "Гравець не знайдений або не в грі!")
             return
         end
@@ -562,6 +530,21 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
         
         if send_message(player_name, receiver, message) then
             minetest.chat_send_player(player_name, "✉️ Повідомлення надіслано!")
+            
+            if receiver == "Брус" then
+                local mechanic_replies = {
+                    "Ну добре, прийду, але тільки тому, що мені самому треба сплавити тобі цей мотлох. Чекай, скоро буду, і не ний.",
+                    "Та йду вже, йду, бовдуре. Тільки спробуй нічого не купити — я заради тебе час витрачаю.",
+                    "Ладно, зараз з'явлюся у твоєму світі. Але якщо знову почнеш торгуватися за кожну залізяку — одразу піду."
+                }
+                local random_reply = mechanic_replies[math.random(#mechanic_replies)]
+                
+                minetest.after(1, function()
+                    send_message("Брус", player_name, random_reply)
+                    minetest.chat_send_player(player_name, "💬 Нове повідомлення від Брус!")
+                end)
+            end
+
             update_cooldown(player_name, "message")
             show_tablet(player_name, "main")
         end

@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>icon generator</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f4f4f9;
+            margin: 0;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        #drop-zone {
+            border: 3px dashed #ccc;
+            padding: 40px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #fafafa;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        #drop-zone.hover {
+            border-color: #007bff;
+            background: #e9f3ff;
+        }
+        #file-input {
+            display: none;
+        }
+        #preview-container {
+            margin-top: 20px;
+            display: none;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            max-width: 100%;
+            height: auto;
+            background: repeating-conic-gradient(#eee 0% 25%, #fff 0% 50%) 50% / 20px 20px; /* Checkerboard for transparency */
+        }
+        .btn {
+            display: inline-block;
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background-color: #218838;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div id="drop-zone">
+        <p>Drag & drop your website PNG here <br>or <strong>click to browse</strong></p>
+        <input type="file" id="file-input" accept="image/png">
+    </div>
+
+    <div id="preview-container">
+        <h3>Preview (822 x 822)</h3>
+        <canvas id="canvas" width="822" height="822"></canvas>
+        <br>
+        <a id="download-btn" class="btn" download="padded-image.png">Download Padded PNG</a>
+    </div>
+</div>
+
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const previewContainer = document.getElementById('preview-container');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const downloadBtn = document.getElementById('download-btn');
+
+    // Trigger file selection click
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    // Drag and drop handlers
+    dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('hover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('hover');
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('hover');
+        if (e.dataTransfer.files.length > 0) {
+            processImage(e.dataTransfer.files[0]);
+        }
+    });
+
+    // File input change handler
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            processImage(e.target.files[0]);
+        }
+    });
+
+    function processImage(file) {
+        if (!file.type.includes('image/')) return;
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                // Clear canvas (keeps background transparent)
+                ctx.clearRect(0, 0, 822, 822);
+
+                // Calculate fitting dimensions while maintaining aspect ratio
+                let width = img.width;
+                let height = img.height;
+                const maxDim = 822;
+
+                if (width > maxDim || height > maxDim) {
+                    if (width > height) {
+                        height *= maxDim / width;
+                        width = maxDim;
+                    } else {
+                        width *= maxDim / height;
+                        height = maxDim;
+                    }
+                }
+
+                // Center the image on the 822x822 canvas
+                const x = (maxDim - width) / 2;
+                const y = (maxDim - height) / 2;
+
+                ctx.drawImage(img, x, y, width, height);
+
+                // Show preview and update download link
+                previewContainer.style.display = 'block';
+                downloadBtn.href = canvas.toDataURL('image/png');
+            }
+            img.src = event.target.result;
+        }
+        reader.readAsDataURL(file);
+    }
+</script>
+
+</body>
+</html>

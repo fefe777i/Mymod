@@ -1471,27 +1471,36 @@ local function start_research_word(player_name, word_id)
 end
 
 -- ============================================
--- ПЕРЕВІРКА ЗАВЕРШЕННЯ ДОСЛІДЖЕНЬ
+-- ПЕРЕВІРКА ЗАВЕРШЕННЯ ДОСЛІДЖЕНЬ (ВИПРАВЛЕНО!)
 -- ============================================
 
 local function check_research_completion(player_name)
     local data = get_player_data(player_name)
-    if not data.words then return end
+    if not data or not data.words then return end
     
     local current_time = os.time()
     local changed = false
     
     for id, word_data in pairs(data.words) do
-        -- Якщо слово в стадії дослідження і час вийшов
+        -- Шукаємо слова в статусі "researching"
         if word_data.status == "researching" and word_data.start_time then
-            local word = word_data.word
-            if current_time >= word_data.start_time + word.research_time then
+            -- ВИПРАВЛЕННЯ: research_time лежить у word_data.word.research_time, а не просто word_data.research_time
+            local research_time = 60 -- дефолт, якщо щось пішло не так
+            
+            if word_data.word and word_data.word.research_time then
+                research_time = word_data.word.research_time
+            end
+            
+            -- Перевіряємо чи час вийшов
+            if current_time >= word_data.start_time + research_time then
                 word_data.status = "pending"
                 word_data.researched = true
                 word_data.researched_time = current_time
                 changed = true
                 
-                minetest.chat_send_player(player_name, "✨ Дослідження слова '" .. word.word .. "' завершено! Відкрийте меню слів (кнопка 'Книга').")
+                local word_name = word_data.word and word_data.word.word or "???"
+                minetest.chat_send_player(player_name, "✨ Дослідження слова '" .. word_name .. "' завершено! Відкрийте меню слів (кнопка 'Книга').")
+                minetest.sound_play("default_tool_breaks", {to_player = player_name, gain = 0.5})
             end
         end
     end
@@ -1500,20 +1509,6 @@ local function check_research_completion(player_name)
         save_fortress_data()
     end
 end
-
--- Перевірка кожні 2 секунди
-local timer = 0
-minetest.register_globalstep(function(dtime)
-    timer = timer + dtime
-    
-    if timer > 2 then
-        for _, player in ipairs(minetest.get_connected_players()) do
-            local player_name = player:get_player_name()
-            check_research_completion(player_name)
-        end
-        timer = 0
-    end
-end)
 
 -- ============================================
 -- МЕНЮ ВИБОРУ СЛІВ ПРИ ПІДВИЩЕННІ РІВНЯ
@@ -1553,10 +1548,9 @@ function show_level_up_words(player_name)
             end
             
             -- Перевіряємо чи слово вже вивчене
-            local already_learned = data.words and data.words[word.id] and data.words[word.id].status == "accepted"
+                        local already_has = data.words and data.words[word.id] ~= nil
             
-            -- Якщо слово не в options і не вивчене - додаємо
-            if not already_in_options and not already_learned then
+            if not already_in_options and not already_has then
                 table.insert(options, word)
             end
         end
@@ -1613,6 +1607,25 @@ function show_words_menu(player_name)
     
     local attrs = data.attributes
     
+    -- Отримуємо модель і текстуру гравця
+    local player_obj = minetest.get_player_by_name(player_name)
+    local level = 0
+    if human_fortress.edos_data[player_name] then
+        level = human_fortress.edos_data[player_name].level or 0
+    end
+    
+    local preview_mesh = "character.b3d"
+    local preview_tex = "character.png"
+    
+    if edit_skin then
+        if edit_skin.get_mesh_for_level then
+            preview_mesh = edit_skin.get_mesh_for_level(level)
+        end
+        if player_obj and edit_skin.get_skin_texture then
+            preview_tex = edit_skin.get_skin_texture(player_obj)
+        end
+    end
+
     local formspec = "size[14,9]" ..
         "bgcolor[#0A0A1A;true]" ..
         
@@ -1625,7 +1638,7 @@ function show_words_menu(player_name)
         
         "container[5.5,3]" ..
         "box[0,0;3,3;#2A2A4A]" ..
-        "image[0.5,0.5;2,2;human_fortress_player_icon.png]" ..
+        "model[0.5,0.5;2,2;player_preview;" .. preview_mesh .. ";" .. preview_tex .. ";0,180;false;true;0,0]" ..
         "label[0.8,2.5;Ви]" ..
         "container_end[]"
     
@@ -1678,7 +1691,7 @@ function show_words_menu(player_name)
 end
 
 -- ============================================
--- МЕНЮ ВИБОРУ ДЛЯ СЛОВА
+-- МЕНЮ ВИБОРУ ДЛЯ СЛОВА (ОНОВЛЕНО — ДВІ ГІЛКИ НАГОРОД)
 -- ============================================
 
 local function show_word_choice_menu(player_name, word_id)
@@ -1687,68 +1700,67 @@ local function show_word_choice_menu(player_name, word_id)
     
     local word = data.words[word_id].word
     
-    local formspec = "size[8,6]" ..
+    local formspec = "size[8,8]" ..
         "bgcolor[#0A0A1A;true]" ..
-        
         "box[0,0;8,0.8;#2D2D44]" ..
         "label[0.5,0.2;📖 СЛОВО: " .. word.word .. "]" ..
-        
-        "box[0.5,1;7,3;#1E1E2E]" ..
+        "box[0.5,1;7,1.5;#1E1E2E]" ..
         "label[1,1.2;'" .. word.word .. "']" ..
         "label[1,1.6;" .. word.description .. "]" ..
-        "label[1,2.0;📊 Рівень: " .. word.level .. " | Рідкість: " .. word.rarity .. "]" ..
-        
-        "label[1,2.6;🎁 ЯКЩО ПРИЙНЯТИ:]"
+        "label[1,2.0;📊 Рівень: " .. word.level .. " | Рідкість: " .. word.rarity .. "]"
     
-    local y = 3.0
+    -- ГІЛКА 1: ПРИЙНЯТИ
+    local y = 2.8
+    formspec = formspec .. "label[0.5," .. y .. ";✅ ЯКЩО ПРИЙНЯТИ:]"
+    y = 3.2
     for _, reward in ipairs(word.rewards.accept) do
         if reward.type == "edos" then
-            formspec = formspec .. "label[1," .. y .. ";   • +" .. reward.amount .. " Ейдосів]"
+            local sign = reward.amount >= 0 and "+" or ""
+            formspec = formspec .. "label[1," .. y .. ";   • " .. sign .. reward.amount .. " Ейдосів]"
         elseif reward.type == "attribute" then
             local attr_name = "???"
             if reward.attr == "mind" then attr_name = "Розум"
             elseif reward.attr == "strength" then attr_name = "Сила"
             elseif reward.attr == "will" then attr_name = "Воля" end
-            formspec = formspec .. "label[1," .. y .. ";   • +" .. reward.amount .. " " .. attr_name .. "]"
+            local sign = reward.amount >= 0 and "+" or ""
+            formspec = formspec .. "label[1," .. y .. ";   • " .. sign .. reward.amount .. " " .. attr_name .. "]"
         end
-        y = y + 0.3
+        y = y + 0.35
     end
     
-    formspec = formspec .. "label[1,4.0;💔 ЯКЩО ВІДМОВИТИСЯ:]"
-    y = 4.4
+    -- ГІЛКА 2: ВІДМОВИТИСЯ
+    y = 4.6
+    formspec = formspec .. "label[0.5," .. y .. ";❌ ЯКЩО ВІДМОВИТИСЯ:]"
+    y = 5.0
     for _, reward in ipairs(word.rewards.reject) do
-        if reward.type == "damage" then
-            formspec = formspec .. "label[1," .. y .. ";   • -" .. reward.amount .. " здоров'я]"
+        if reward.type == "edos" then
+            local sign = reward.amount >= 0 and "+" or ""
+            formspec = formspec .. "label[1," .. y .. ";   • " .. sign .. reward.amount .. " Ейдосів]"
         elseif reward.type == "attribute" then
             local attr_name = "???"
             if reward.attr == "mind" then attr_name = "Розум"
             elseif reward.attr == "strength" then attr_name = "Сила"
             elseif reward.attr == "will" then attr_name = "Воля" end
-            formspec = formspec .. "label[1," .. y .. ";   • " .. reward.amount .. " " .. attr_name .. "]"
-        elseif reward.type == "effect" then
-            formspec = formspec .. "label[1," .. y .. ";   • Ефект: " .. reward.effect .. " (" .. reward.duration .. "с)]"
-        elseif reward.type == "message" then
-            formspec = formspec .. "label[1," .. y .. ";   • " .. reward.text .. "]"
+            local sign = reward.amount >= 0 and "+" or ""
+            formspec = formspec .. "label[1," .. y .. ";   • " .. sign .. reward.amount .. " " .. attr_name .. "]"
         end
-        y = y + 0.3
+        y = y + 0.35
     end
     
     formspec = formspec ..
-        "button[1.5,5.2;2,0.8;accept_word;✅ ПРИЙНЯТИ]" ..
-        "button[4.5,5.2;2,0.8;reject_word;❌ ВІДМОВИТИСЯ]"
+        "button[1,6.8;2.5,0.8;accept_word;✅ ПРИЙНЯТИ]" ..
+        "button[4.5,6.8;2.5,0.8;reject_word;❌ ВІДМОВИТИСЯ]"
     
-    local context = data
-    context.pending_word_id = word_id
+    data.pending_word_id = word_id
     save_fortress_data()
     
     minetest.show_formspec(player_name, "human_fortress:word_choice", formspec)
 end
 
 -- ============================================
--- ДОПОМІЖНІ ФУНКЦІЇ
+-- ОБРОБКА ПРИЙНЯТТЯ (rewards.accept)
 -- ============================================
 
--- Обробка прийняття слова
 local function accept_word(player_name, word_id)
     local data = get_player_data(player_name)
     if not data.words[word_id] then return false end
@@ -1757,11 +1769,15 @@ local function accept_word(player_name, word_id)
     
     for _, reward in ipairs(word.rewards.accept) do
         if reward.type == "edos" then
-            -- add_resources(player_name, "score", reward.amount)
-            minetest.chat_send_player(player_name, "💰 +" .. reward.amount .. " Ейдосів!")
+            if human_fortress.edos_data and human_fortress.edos_data[player_name] then
+                human_fortress.edos_data[player_name].score = (human_fortress.edos_data[player_name].score or 0) + reward.amount
+            end
+            local sign = reward.amount >= 0 and "+" or ""
+            minetest.chat_send_player(player_name, "💰 " .. sign .. reward.amount .. " Ейдосів!")
         elseif reward.type == "attribute" then
             add_attribute(player_name, reward.attr, reward.amount)
-            minetest.chat_send_player(player_name, "✨ +" .. reward.amount .. " " .. reward.attr .. "!")
+            local sign = reward.amount >= 0 and "+" or ""
+            minetest.chat_send_player(player_name, "✨ " .. sign .. reward.amount .. " " .. reward.attr .. "!")
         end
     end
     
@@ -1771,34 +1787,34 @@ local function accept_word(player_name, word_id)
     return true
 end
 
--- Обробка відмови від слова
+-- ============================================
+-- ОБРОБКА ВІДМОВИ (rewards.reject — теж нагороди, просто інші)
+-- ============================================
+
 local function reject_word(player_name, word_id)
     local data = get_player_data(player_name)
     if not data.words[word_id] then return false end
     
     local word = data.words[word_id].word
-    local player = minetest.get_player_by_name(player_name)
     
     for _, reward in ipairs(word.rewards.reject) do
-        if reward.type == "damage" then
-            if player then
-                local hp = player:get_hp()
-                player:set_hp(math.max(1, hp - reward.amount))
-                minetest.chat_send_player(player_name, "💔 Ви отримали " .. reward.amount .. " шкоди!")
+        if reward.type == "edos" then
+            if human_fortress.edos_data and human_fortress.edos_data[player_name] then
+                human_fortress.edos_data[player_name].score = (human_fortress.edos_data[player_name].score or 0) + reward.amount
             end
+            local sign = reward.amount >= 0 and "+" or ""
+            minetest.chat_send_player(player_name, "💰 " .. sign .. reward.amount .. " Ейдосів (відмова)!")
         elseif reward.type == "attribute" then
             add_attribute(player_name, reward.attr, reward.amount)
-            minetest.chat_send_player(player_name, "💔 " .. reward.amount .. " " .. reward.attr .. "!")
-        elseif reward.type == "effect" then
-            minetest.chat_send_player(player_name, "💔 Ефект: " .. reward.effect)
-        elseif reward.type == "message" then
-            minetest.chat_send_player(player_name, "💔 " .. reward.text)
+            local sign = reward.amount >= 0 and "+" or ""
+            minetest.chat_send_player(player_name, "✨ " .. sign .. reward.amount .. " " .. reward.attr .. " (відмова)!")
         end
     end
     
     data.words[word_id].status = "rejected"
     save_fortress_data()
     
+    minetest.chat_send_player(player_name, "🗑️ Слово відхилено. Альтернативна нагорода отримана.")
     return true
 end
 
