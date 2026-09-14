@@ -29,62 +29,38 @@ local function remove_core_visual(pos)
     end
 end
 
-local function add_core_visual(pos, original_node)
-    if not original_node or original_node == "" or original_node == "air" then
+local function set_core_hitbox(obj, pos)
+    local data = get_core_building(pos)
+    if not data.min or not data.max then
         return
     end
 
-    remove_core_visual(pos)
+    local center = vector.add(pos, {x = 0.5, y = 0.5, z = 0.5})
+    local minbox = {
+        x = data.min.x - center.x,
+        y = data.min.y - center.y,
+        z = data.min.z - center.z
+    }
+    local maxbox = {
+        x = data.max.x + 1 - center.x,
+        y = data.max.y + 1 - center.y,
+        z = data.max.z + 1 - center.z
+    }
 
-    local obj = minetest.add_entity(
-        vector.add(pos, {x = 0.5, y = 0.5, z = 0.5}),
-        CORE_ENTITY
-    )
-
-    if obj then
-        local ent = obj:get_luaentity()
-        if ent then
-            ent.core_pos = vector.new(pos)
-            ent.original_node = original_node
-        end
-        obj:set_properties({wield_item = original_node})
-    end
+    obj:set_properties({
+        selectionbox = {
+            type = "fixed",
+            fixed = {
+                minbox.x, minbox.y, minbox.z,
+                maxbox.x, maxbox.y, maxbox.z
+            }
+        },
+        collisionbox = {
+            minbox.x, minbox.y, minbox.z,
+            maxbox.x, maxbox.y, maxbox.z
+        }
+    })
 end
-
-minetest.register_entity(CORE_ENTITY, {
-    initial_properties = {
-        physical = false,
-        collide_with_objects = false,
-        pointable = false,
-        visual = "wielditem",
-        visual_size = {x = 1, y = 1},
-        static_save = true,
-        textures = {"air.png"},
-    },
-
-    core_pos = nil,
-    original_node = "",
-
-    get_staticdata = function(self)
-        return minetest.serialize({
-            core_pos = self.core_pos,
-            original_node = self.original_node,
-        })
-    end,
-
-    on_activate = function(self, staticdata)
-        if staticdata and staticdata ~= "" then
-            local data = minetest.deserialize(staticdata)
-            if data then
-                self.core_pos = data.core_pos
-                self.original_node = data.original_node or ""
-                if self.original_node ~= "" then
-                    self.object:set_properties({wield_item = self.original_node})
-                end
-            end
-        end
-    end,
-})
 
 local function open_building_menu(player, pos)
     local data = get_core_building(pos)
@@ -116,6 +92,81 @@ local function open_building_menu(player, pos)
         "button_exit[2,4.5;4,1;close;Закрити]"
     )
 end
+
+local function add_core_visual(pos, original_node)
+    if not original_node or original_node == "" or original_node == "air" then
+        return
+    end
+
+    remove_core_visual(pos)
+
+    local obj = minetest.add_entity(
+        vector.add(pos, {x = 0.5, y = 0.5, z = 0.5}),
+        CORE_ENTITY
+    )
+
+    if obj then
+        local ent = obj:get_luaentity()
+        if ent then
+            ent.core_pos = vector.new(pos)
+            ent.original_node = original_node
+        end
+        obj:set_properties({wield_item = original_node})
+        set_core_hitbox(obj, pos)
+    end
+end
+
+minetest.register_entity(CORE_ENTITY, {
+    initial_properties = {
+        physical = false,
+        collide_with_objects = false,
+        pointable = true,
+        visual = "wielditem",
+        visual_size = {x = 1, y = 1},
+        selectionbox = {
+            type = "fixed",
+            fixed = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5}
+        },
+        static_save = true,
+        textures = {"air.png"},
+    },
+
+    core_pos = nil,
+    original_node = "",
+
+    get_staticdata = function(self)
+        return minetest.serialize({
+            core_pos = self.core_pos,
+            original_node = self.original_node,
+        })
+    end,
+
+    on_activate = function(self, staticdata)
+        if staticdata and staticdata ~= "" then
+            local data = minetest.deserialize(staticdata)
+            if data then
+                self.core_pos = data.core_pos
+                self.original_node = data.original_node or ""
+                if self.original_node ~= "" then
+                    self.object:set_properties({wield_item = self.original_node})
+                end
+                if self.core_pos then
+                    minetest.after(0, function()
+                        if self.object and self.object:get_pos() then
+                            set_core_hitbox(self.object, self.core_pos)
+                        end
+                    end)
+                end
+            end
+        end
+    end,
+
+    on_rightclick = function(self, clicker)
+        if clicker and clicker:is_player() and self.core_pos then
+            open_building_menu(clicker, self.core_pos)
+        end
+    end,
+})
 
 minetest.register_node(CORE_NODE, {
     description = "Серце будівлі",
@@ -367,5 +418,15 @@ minetest.register_lbm({
         if original ~= "" then
             add_core_visual(pos, original)
         end
+    end,
+})
+
+minetest.register_lbm({
+    label = "Видалення старих комп'ютерів будівель",
+    name = "human_fortress:remove_old_building_computers",
+    nodenames = {"human_fortress:building_computer"},
+    run_at_every_load = true,
+    action = function(pos)
+        minetest.remove_node(pos)
     end,
 })
