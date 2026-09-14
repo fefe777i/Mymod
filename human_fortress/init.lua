@@ -96,7 +96,6 @@ for _, file in ipairs(building_files) do
     end
 end
 dofile(path .. "/core_heart.lua")
-dofile(path .. "/buildings.lua")
 dofile(path .. "/commands.lua")
 dofile(path .. "/ether_tree.lua")
 dofile(path .. "/ai.lua")
