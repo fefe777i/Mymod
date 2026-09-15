@@ -143,12 +143,12 @@ local function register_core_variant(building_type, x, y, z, minp, maxp)
 
     local name = get_core_node_name(building_type, x, y, z)
     local minbox = {
-        minp.x - x - 0.5,
-        minp.y - y - 0.5,
-        minp.z - z - 0.5,
-        maxp.x + 1 - x - 0.5,
-        maxp.y + 1 - y - 0.5,
-        maxp.z + 1 - z - 0.5
+        minp.x - x - 1.5,
+        minp.y - y - 1.5,
+        minp.z - z - 1.5,
+        maxp.x + 1 - x + 0.5,
+        maxp.y + 1 - y + 0.5,
+        maxp.z + 1 - z + 0.5
     }
 
     minetest.register_node(name, {
@@ -461,7 +461,7 @@ local function create_core_for_building(player_name, building_type, pos)
 
     local candidates = {}
     for _, block in ipairs(blocks) do
-        local node = minetest.get_node(block)
+        local node = minetest.get_node({x = block.x, y = block.y, z = block.z})
         if node.name == block.node then
             table.insert(candidates, block)
         end
@@ -472,78 +472,67 @@ local function create_core_for_building(player_name, building_type, pos)
     end
 
     local chosen = candidates[math.random(#candidates)]
-    local original = minetest.get_node(chosen)
     local core_node = get_core_node_name(building_type, chosen.ox, chosen.oy, chosen.oz)
-
     if not CORE_NODE_SET[core_node] then
-        return false
+        core_node = CORE_NODE
     end
 
-    minetest.set_node(chosen, {name = core_node})
+    minetest.set_node(
+        {x = chosen.x, y = chosen.y, z = chosen.z},
+        {name = core_node}
+    )
 
-    return human_fortress.set_core_data(chosen, {
+    human_fortress.set_core_data({x = chosen.x, y = chosen.y, z = chosen.z}, {
         owner = player_name,
         building_type = building_type,
-        building_pos = pos,
+        building_pos = vector.new(pos),
         min = minp,
         max = maxp,
-        original_node = original.name
+        original_node = chosen.node
     })
+
+    return true
 end
 
-local function remove_old_building_computers(building_type, pos)
-    local blocks = get_building_blocks(building_type, pos)
-    for _, block in ipairs(blocks) do
-        if minetest.get_node(block).name == "human_fortress:building_computer" then
-            minetest.remove_node(block)
-        end
-    end
-end
-
-local function wrap_building(building_type, building_data)
-    if not building_data or building_data._core_heart_wrapped then
+local function wrap_building(building_type)
+    local schematic = BUILDING_SCHEMATICS[building_type]
+    if not schematic then
         return
     end
 
-    local old_on_built = building_data.on_built
-
-    building_data.on_built = function(player_name, pos, ...)
+    local old_on_built = schematic.on_built
+    schematic.on_built = function(player_name, pos)
         if old_on_built then
-            local ok, err = pcall(old_on_built, player_name, pos, ...)
-            if not ok then
-                minetest.log("error", "[Human Fortress] Помилка on_built " .. tostring(building_type) .. ": " .. tostring(err))
-            end
+            pcall(old_on_built, player_name, pos)
         end
 
         minetest.after(0, function()
-            remove_old_building_computers(building_type, pos)
             create_core_for_building(player_name, building_type, pos)
         end)
     end
-
-    building_data._core_heart_wrapped = true
 end
 
-for building_type, building_data in pairs(BUILDING_SCHEMATICS or {}) do
-    wrap_building(building_type, building_data)
+for building_type in pairs(BUILDING_SCHEMATICS or {}) do
+    wrap_building(building_type)
 end
 
 minetest.register_lbm({
-    label = "Відновлення візуалу сердець будівель",
     name = "human_fortress:restore_core_visuals",
+    label = "Restore building core visuals",
     nodenames = CORE_NODES,
     run_at_every_load = true,
-    action = function(pos)
-        local original = minetest.get_meta(pos):get_string("original_node")
-        if original ~= "" then
-            add_core_visual(pos, original)
+    action = function(pos, node)
+        local meta = minetest.get_meta(pos)
+        local original_node = meta:get_string("original_node")
+        if original_node ~= "" then
+            add_core_visual(pos, original_node)
         end
     end,
 })
 
 minetest.register_lbm({
-    label = "Видалення старих комп'ютерів будівель",
     name = "human_fortress:remove_old_building_computers",
+    label = "Remove old building computers",
     nodenames = {"human_fortress:building_computer"},
     run_at_every_load = true,
     action = function(pos)
