@@ -181,12 +181,10 @@ local function register_core_variant(building_type, x, y, z, minp, maxp, origina
         },
         sounds = default.node_sound_stone_defaults(),
         is_ground_content = false,
-
         selection_box = {
             type = "fixed",
             fixed = minbox
         },
-
         on_construct = function(pos)
             local meta = minetest.get_meta(pos)
             meta:set_string("infotext", "🏗️ Серце будівлі")
@@ -197,18 +195,15 @@ local function register_core_variant(building_type, x, y, z, minp, maxp, origina
             meta:set_string("building_max", "")
             meta:set_string("original_node", "")
         end,
-
         on_rightclick = function(pos, node, clicker)
             if clicker and clicker:is_player() then
                 open_building_menu(clicker, pos)
             end
         end,
-
         on_punch = function(pos, node, puncher)
             if not puncher or not puncher:is_player() then
                 return
             end
-
             local data = get_core_building(pos)
             if data.owner ~= "" then
                 minetest.chat_send_player(
@@ -217,7 +212,6 @@ local function register_core_variant(building_type, x, y, z, minp, maxp, origina
                 )
             end
         end,
-
         on_destruct = function(pos)
             remove_core_visual(pos)
         end,
@@ -461,6 +455,11 @@ local function create_core_for_building(player_name, building_type, pos)
         return nil
     end
 
+    local schematic_data = get_building_schematic_data(building_type)
+    if not schematic_data or not schematic_data.size then
+        return nil
+    end
+
     local blocks = get_building_blocks(building_type, pos)
     if #blocks == 0 then
         return nil
@@ -483,9 +482,9 @@ local function create_core_for_building(player_name, building_type, pos)
         building_pos = vector.new(pos),
         min = {x = pos.x, y = pos.y, z = pos.z},
         max = {
-            x = pos.x + schematic.size.x - 1,
-            y = pos.y + schematic.size.y - 1,
-            z = pos.z + schematic.size.z - 1
+            x = pos.x + schematic_data.size.x - 1,
+            y = pos.y + schematic_data.size.y - 1,
+            z = pos.z + schematic_data.size.z - 1
         },
         original_node = node.name
     })
