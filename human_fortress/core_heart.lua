@@ -184,7 +184,7 @@ local function register_core_variant(building_type, x, y, z, minp, maxp, origina
 
         selection_box = {
             type = "fixed",
-            fixed = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5}
+            fixed = minbox
         },
 
         on_construct = function(pos)
@@ -456,83 +456,68 @@ local function get_building_blocks(building_type, anchor_pos)
 end
 
 local function create_core_for_building(player_name, building_type, pos)
+    local schematic = BUILDING_SCHEMATICS and BUILDING_SCHEMATICS[building_type]
+    if not schematic or not schematic.schematic then
+        return nil
+    end
+
     local blocks = get_building_blocks(building_type, pos)
     if #blocks == 0 then
-        return false
+        return nil
     end
 
-    local minp = vector.new(blocks[1])
-    local maxp = vector.new(blocks[1])
+    local target = blocks[math.random(1, #blocks)]
+    local core_pos = {x = target.x, y = target.y, z = target.z}
+    local node = minetest.get_node(core_pos)
+    local variant = CORE_VARIANTS[building_type] and CORE_VARIANTS[building_type][core_key(target.ox, target.oy, target.oz)]
 
-    for _, block in ipairs(blocks) do
-        minp.x = math.min(minp.x, block.x)
-        minp.y = math.min(minp.y, block.y)
-        minp.z = math.min(minp.z, block.z)
-        maxp.x = math.max(maxp.x, block.x)
-        maxp.y = math.max(maxp.y, block.y)
-        maxp.z = math.max(maxp.z, block.z)
+    if variant then
+        minetest.swap_node(core_pos, {name = variant, param1 = node.param1, param2 = node.param2})
+    else
+        minetest.swap_node(core_pos, {name = CORE_NODE, param1 = node.param1, param2 = node.param2})
     end
 
-    local candidates = {}
-    for _, block in ipairs(blocks) do
-        local node = minetest.get_node({x = block.x, y = block.y, z = block.z})
-        if node.name == block.node then
-            table.insert(candidates, block)
-        end
-    end
-
-    if #candidates == 0 then
-        return false
-    end
-
-    local chosen = candidates[math.random(#candidates)]
-    local core_node = get_core_node_name(building_type, chosen.ox, chosen.oy, chosen.oz)
-    if not CORE_NODE_SET[core_node] then
-        core_node = CORE_NODE
-    end
-
-    minetest.set_node(
-        {x = chosen.x, y = chosen.y, z = chosen.z},
-        {name = core_node}
-    )
-
-    human_fortress.set_core_data({x = chosen.x, y = chosen.y, z = chosen.z}, {
+    human_fortress.set_core_data(core_pos, {
         owner = player_name,
         building_type = building_type,
         building_pos = vector.new(pos),
-        min = minp,
-        max = maxp,
-        original_node = chosen.node
+        min = {x = pos.x, y = pos.y, z = pos.z},
+        max = {
+            x = pos.x + schematic.size.x - 1,
+            y = pos.y + schematic.size.y - 1,
+            z = pos.z + schematic.size.z - 1
+        },
+        original_node = node.name
     })
 
-    return true
+    return core_pos
 end
 
-local function wrap_building(building_type)
-    local schematic = BUILDING_SCHEMATICS[building_type]
-    if not schematic then
+local function wrap_building(building_type, building_data)
+    if not building_data or building_data.__core_wrapped then
         return
     end
 
-    local old_on_built = schematic.on_built
-    schematic.on_built = function(player_name, pos)
-        if old_on_built then
-            pcall(old_on_built, player_name, pos)
+    building_data.__core_wrapped = true
+    local original_on_built = building_data.on_built
+
+    building_data.on_built = function(player_name, pos, ...)
+        local result
+        if original_on_built then
+            result = original_on_built(player_name, pos, ...)
         end
 
-        minetest.after(0, function()
-            create_core_for_building(player_name, building_type, pos)
-        end)
+        create_core_for_building(player_name, building_type, pos)
+        return result
     end
 end
 
-for building_type in pairs(BUILDING_SCHEMATICS or {}) do
-    wrap_building(building_type)
+for building_type, building_data in pairs(BUILDING_SCHEMATICS or {}) do
+    wrap_building(building_type, building_data)
 end
 
 minetest.register_lbm({
     name = "human_fortress:remove_old_core_visuals",
-    label = "Remove old building core visuals",
     nodenames = CORE_NODES,
     run_at_every_load = true,
     action = function(pos)
@@ -542,7 +527,6 @@ minetest.register_lbm({
 
 minetest.register_lbm({
     name = "human_fortress:remove_old_building_computers",
-    label = "Remove old building computers",
     nodenames = {"human_fortress:building_computer"},
     run_at_every_load = true,
     action = function(pos)
