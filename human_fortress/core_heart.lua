@@ -1,5 +1,22 @@
 local CORE_NODE = "human_fortress:core_heart"
+local CORE_PREFIX = "human_fortress:core_heart_"
 local CORE_ENTITY = "human_fortress:core_visual"
+
+local CORE_NODES = {CORE_NODE}
+local CORE_NODE_SET = {[CORE_NODE] = true}
+local CORE_VARIANTS = {}
+
+local function core_key(x, y, z)
+    return x .. "_" .. y .. "_" .. z
+end
+
+local function get_core_node_name(building_type, x, y, z)
+    return CORE_PREFIX .. building_type .. "_" .. x .. "_" .. y .. "_" .. z
+end
+
+local function is_core_node(name)
+    return CORE_NODE_SET[name] == true
+end
 
 local function get_core_building(pos)
     local meta = minetest.get_meta(pos)
@@ -27,39 +44,6 @@ local function remove_core_visual(pos)
             obj:remove()
         end
     end
-end
-
-local function set_core_hitbox(obj, pos)
-    local data = get_core_building(pos)
-    if not data.min or not data.max then
-        return
-    end
-
-    local center = vector.add(pos, {x = 0.5, y = 0.5, z = 0.5})
-    local minbox = {
-        x = data.min.x - center.x,
-        y = data.min.y - center.y,
-        z = data.min.z - center.z
-    }
-    local maxbox = {
-        x = data.max.x + 1 - center.x,
-        y = data.max.y + 1 - center.y,
-        z = data.max.z + 1 - center.z
-    }
-
-    obj:set_properties({
-        selectionbox = {
-            type = "fixed",
-            fixed = {
-                minbox.x, minbox.y, minbox.z,
-                maxbox.x, maxbox.y, maxbox.z
-            }
-        },
-        collisionbox = {
-            minbox.x, minbox.y, minbox.z,
-            maxbox.x, maxbox.y, maxbox.z
-        }
-    })
 end
 
 local function open_building_menu(player, pos)
@@ -112,7 +96,6 @@ local function add_core_visual(pos, original_node)
             ent.original_node = original_node
         end
         obj:set_properties({wield_item = original_node})
-        set_core_hitbox(obj, pos)
     end
 end
 
@@ -120,13 +103,9 @@ minetest.register_entity(CORE_ENTITY, {
     initial_properties = {
         physical = false,
         collide_with_objects = false,
-        pointable = true,
+        pointable = false,
         visual = "wielditem",
         visual_size = {x = 1, y = 1},
-        selectionbox = {
-            type = "fixed",
-            fixed = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5}
-        },
         static_save = true,
         textures = {"air.png"},
     },
@@ -150,23 +129,148 @@ minetest.register_entity(CORE_ENTITY, {
                 if self.original_node ~= "" then
                     self.object:set_properties({wield_item = self.original_node})
                 end
-                if self.core_pos then
-                    minetest.after(0, function()
-                        if self.object and self.object:get_pos() then
-                            set_core_hitbox(self.object, self.core_pos)
-                        end
-                    end)
-                end
             end
         end
     end,
-
-    on_rightclick = function(self, clicker)
-        if clicker and clicker:is_player() and self.core_pos then
-            open_building_menu(clicker, self.core_pos)
-        end
-    end,
 })
+
+local function register_core_variant(building_type, x, y, z, minp, maxp)
+    local key = core_key(x, y, z)
+    CORE_VARIANTS[building_type] = CORE_VARIANTS[building_type] or {}
+    if CORE_VARIANTS[building_type][key] then
+        return CORE_VARIANTS[building_type][key]
+    end
+
+    local name = get_core_node_name(building_type, x, y, z)
+    local minbox = {
+        minp.x - x - 0.5,
+        minp.y - y - 0.5,
+        minp.z - z - 0.5,
+        maxp.x + 1 - x - 0.5,
+        maxp.y + 1 - y - 0.5,
+        maxp.z + 1 - z - 0.5
+    }
+
+    minetest.register_node(name, {
+        description = "Серце будівлі",
+        drawtype = "airlike",
+        paramtype = "light",
+        sunlight_propagates = true,
+        walkable = false,
+        pointable = true,
+        diggable = false,
+        groups = {
+            cracky = 1,
+            level = 1,
+            not_in_creative_inventory = 1,
+            building_core = 1
+        },
+        sounds = default.node_sound_stone_defaults(),
+        is_ground_content = false,
+
+        selection_box = {
+            type = "fixed",
+            fixed = minbox
+        },
+
+        on_construct = function(pos)
+            local meta = minetest.get_meta(pos)
+            meta:set_string("infotext", "🏗️ Серце будівлі")
+            meta:set_string("owner", "")
+            meta:set_string("building_type", "")
+            meta:set_string("building_pos", "")
+            meta:set_string("building_min", "")
+            meta:set_string("building_max", "")
+            meta:set_string("original_node", "")
+        end,
+
+        on_rightclick = function(pos, node, clicker)
+            if clicker and clicker:is_player() then
+                open_building_menu(clicker, pos)
+            end
+        end,
+
+        on_punch = function(pos, node, puncher)
+            if not puncher or not puncher:is_player() then
+                return
+            end
+
+            local data = get_core_building(pos)
+            if data.owner ~= "" then
+                minetest.chat_send_player(
+                    puncher:get_player_name(),
+                    "🏗️ Будівля: " .. data.building_type .. " | Власник: " .. data.owner
+                )
+            end
+        end,
+
+        on_destruct = function(pos)
+            remove_core_visual(pos)
+        end,
+    })
+
+    CORE_VARIANTS[building_type][key] = name
+    CORE_NODE_SET[name] = true
+    table.insert(CORE_NODES, name)
+    return name
+end
+
+local function get_building_schematic_data(building_type)
+    local schematic = BUILDING_SCHEMATICS and BUILDING_SCHEMATICS[building_type]
+    if not schematic then
+        return nil
+    end
+
+    local filepath = minetest.get_modpath("human_fortress") .. "/schematics/" .. schematic.schematic
+    return minetest.read_schematic(filepath, {})
+end
+
+local function register_core_variants_for_building(building_type)
+    local data = get_building_schematic_data(building_type)
+    if not data then
+        minetest.log("warning", "[Human Fortress] Не вдалося прочитати схему для " .. building_type)
+        return
+    end
+
+    local minp
+    local maxp
+    local cells = {}
+    local i = 1
+
+    for z = 0, data.size.z - 1 do
+        for y = 0, data.size.y - 1 do
+            for x = 0, data.size.x - 1 do
+                local cell = data.data[i]
+                i = i + 1
+                if cell and cell.name ~= "air" and cell.name ~= "ignore" then
+                    minp = minp and {
+                        x = math.min(minp.x, x),
+                        y = math.min(minp.y, y),
+                        z = math.min(minp.z, z)
+                    } or {x = x, y = y, z = z}
+                    maxp = maxp and {
+                        x = math.max(maxp.x, x),
+                        y = math.max(maxp.y, y),
+                        z = math.max(maxp.z, z)
+                    } or {x = x, y = y, z = z}
+                    table.insert(cells, {x = x, y = y, z = z})
+                end
+            end
+        end
+    end
+
+    if not minp then
+        return
+    end
+
+    for _, cell in ipairs(cells) do
+        register_core_variant(building_type, cell.x, cell.y, cell.z, minp, maxp)
+    end
+end
+
+for building_type in pairs(BUILDING_SCHEMATICS or {}) do
+    register_core_variants_for_building(building_type)
+end
 
 minetest.register_node(CORE_NODE, {
     description = "Серце будівлі",
@@ -174,7 +278,7 @@ minetest.register_node(CORE_NODE, {
     paramtype = "light",
     sunlight_propagates = true,
     walkable = false,
-    pointable = false,
+    pointable = true,
     diggable = false,
     groups = {
         cracky = 1,
@@ -184,12 +288,10 @@ minetest.register_node(CORE_NODE, {
     },
     sounds = default.node_sound_stone_defaults(),
     is_ground_content = false,
-
     selection_box = {
         type = "fixed",
-        fixed = {}
+        fixed = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5}
     },
-
     on_construct = function(pos)
         local meta = minetest.get_meta(pos)
         meta:set_string("infotext", "🏗️ Серце будівлі")
@@ -200,18 +302,15 @@ minetest.register_node(CORE_NODE, {
         meta:set_string("building_max", "")
         meta:set_string("original_node", "")
     end,
-
     on_rightclick = function(pos, node, clicker)
         if clicker and clicker:is_player() then
             open_building_menu(clicker, pos)
         end
     end,
-
     on_punch = function(pos, node, puncher)
         if not puncher or not puncher:is_player() then
             return
         end
-
         local data = get_core_building(pos)
         if data.owner ~= "" then
             minetest.chat_send_player(
@@ -220,14 +319,13 @@ minetest.register_node(CORE_NODE, {
             )
         end
     end,
-
     on_destruct = function(pos)
         remove_core_visual(pos)
     end,
 })
 
 function human_fortress.set_core_data(pos, data)
-    if minetest.get_node(pos).name ~= CORE_NODE then
+    if not is_core_node(minetest.get_node(pos).name) then
         return false
     end
 
@@ -258,7 +356,7 @@ function human_fortress.set_core_data(pos, data)
 end
 
 function human_fortress.get_core_data(pos)
-    if minetest.get_node(pos).name ~= CORE_NODE then
+    if not is_core_node(minetest.get_node(pos).name) then
         return nil
     end
     return get_core_building(pos)
@@ -270,7 +368,7 @@ function human_fortress.find_building_core(pos, radius)
     local cores = minetest.find_nodes_in_area(
         {x = pos.x - radius, y = pos.y - radius, z = pos.z - radius},
         {x = pos.x + radius, y = pos.y + radius, z = pos.z + radius},
-        {CORE_NODE}
+        CORE_NODES
     )
 
     local closest
@@ -330,7 +428,10 @@ local function get_building_blocks(building_type, anchor_pos)
                         x = anchor_pos.x + x,
                         y = anchor_pos.y + y,
                         z = anchor_pos.z + z,
-                        node = cell.name
+                        node = cell.name,
+                        ox = x,
+                        oy = y,
+                        oz = z
                     })
                 end
             end
@@ -372,8 +473,13 @@ local function create_core_for_building(player_name, building_type, pos)
 
     local chosen = candidates[math.random(#candidates)]
     local original = minetest.get_node(chosen)
+    local core_node = get_core_node_name(building_type, chosen.ox, chosen.oy, chosen.oz)
 
-    minetest.set_node(chosen, {name = CORE_NODE})
+    if not CORE_NODE_SET[core_node] then
+        return false
+    end
+
+    minetest.set_node(chosen, {name = core_node})
 
     return human_fortress.set_core_data(chosen, {
         owner = player_name,
@@ -425,7 +531,7 @@ end
 minetest.register_lbm({
     label = "Відновлення візуалу сердець будівель",
     name = "human_fortress:restore_core_visuals",
-    nodenames = {CORE_NODE},
+    nodenames = CORE_NODES,
     run_at_every_load = true,
     action = function(pos)
         local original = minetest.get_meta(pos):get_string("original_node")
