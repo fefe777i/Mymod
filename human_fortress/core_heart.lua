@@ -217,7 +217,7 @@ end
 
 local function get_building_schematic_data(building_type)
     local schematic = BUILDING_SCHEMATICS and BUILDING_SCHEMATICS[building_type]
-    if not schematic then
+    if not schematic or not schematic.schematic then
         return nil
     end
 
@@ -405,7 +405,7 @@ end
 
 local function get_building_blocks(building_type, anchor_pos)
     local schematic = BUILDING_SCHEMATICS and BUILDING_SCHEMATICS[building_type]
-    if not schematic then
+    if not schematic or not schematic.schematic then
         return {}
     end
 
