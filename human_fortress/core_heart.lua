@@ -5,6 +5,7 @@ local CORE_ENTITY = "human_fortress:core_visual"
 local CORE_NODES = {CORE_NODE}
 local CORE_NODE_SET = {[CORE_NODE] = true}
 local CORE_VARIANTS = {}
+local opened_core_by_player = {}
 
 local function core_key(x, y, z)
     return x .. "_" .. y .. "_" .. z
@@ -38,7 +39,7 @@ local function get_core_building(pos)
 end
 
 local function remove_core_visual(pos)
-    for _, obj in ipairs(minetest.get_objects_inside_radius(vector.add(pos, {x = 0.5, y = 0.5, z = 0.5}), 0.8)) do
+    for _, obj in ipairs(minetest.get_objects_inside_radius(vector.add(pos, {x = 0.5, y = 0.5, z = 0.5}), 1.5)) do
         local ent = obj:get_luaentity()
         if ent and ent.name == CORE_ENTITY then
             obj:remove()
@@ -68,6 +69,7 @@ local function destroy_building(player_name, core_pos)
     end
 
     remove_core_visual(core_pos)
+    opened_core_by_player[player_name] = nil
 
     if human_fortress.buildings and human_fortress.buildings[player_name] then
         for i = #human_fortress.buildings[player_name], 1, -1 do
@@ -96,104 +98,52 @@ local function open_building_menu(player, pos)
         return
     end
 
-    local formspec =
-        "formspec_version[4]" ..
-        "size[8,5.5]" ..
-        "label[0.5,0.5;🏗️ " .. minetest.formspec_escape(data.building_type) .. "]" ..
-        "label[0.5,1.1;Власник: " .. minetest.formspec_escape(data.owner) .. "]" ..
-        "button[0.8,2;6.4,1;open_building_menu;🏠 ВІДКРИТИ МЕНЮ БУДІВЛІ]" ..
-        "button[0.8,3.3;6.4,1;destroy_building;💥 ЗНИЩИТИ БУДІВЛЮ]" ..
-        "button_exit[2.5,4.5;3,0.7;close;❌ ЗАКРИТИ]"
+    opened_core_by_player[player_name] = vector.new(pos)
 
-    minetest.show_formspec(player_name, "human_fortress:core_manage", formspec)
+    if BUILDING_MENUS and BUILDING_MENUS[data.building_type] then
+        BUILDING_MENUS[data.building_type](player_name, pos, data)
+    else
+        minetest.chat_send_player(player_name, "⚠️ Меню для цієї будівлі не знайдено.")
+        opened_core_by_player[player_name] = nil
+    end
 end
 
 minetest.register_on_player_receive_fields(function(player, formname, fields)
-    if formname ~= "human_fortress:core_manage" then
+    local player_name = player:get_player_name()
+
+    if formname == "human_fortress:core_manage" then
+        local core_pos = opened_core_by_player[player_name]
+
+        if fields.destroy_building then
+            if core_pos then
+                destroy_building(player_name, core_pos)
+            else
+                minetest.chat_send_player(player_name, "❌ Серце будівлі не знайдено!")
+            end
+            return true
+        end
+
+        if fields.quit then
+            opened_core_by_player[player_name] = nil
+            return false
+        end
+
         return false
     end
 
-    local player_name = player:get_player_name()
-    local core_pos = human_fortress.find_building_core and human_fortress.find_building_core(player:get_pos(), 50)
-
-    if fields.destroy_building then
-        if core_pos then
-            destroy_building(player_name, core_pos)
-        else
-            minetest.chat_send_player(player_name, "❌ Серце будівлі не знайдено!")
-        end
+    if fields.destroy_building and opened_core_by_player[player_name] then
+        destroy_building(player_name, opened_core_by_player[player_name])
         return true
     end
 
-    if fields.open_building_menu and core_pos then
-        local data = get_core_building(core_pos)
-        if BUILDING_MENUS and BUILDING_MENUS[data.building_type] then
-            BUILDING_MENUS[data.building_type](player_name, core_pos, data)
-        end
-        return true
+    if fields.quit then
+        opened_core_by_player[player_name] = nil
     end
 
     return false
 end)
 
-local function add_core_visual(pos, original_node)
-    if not original_node or original_node == "" or original_node == "air" then
-        return
-    end
-
-    remove_core_visual(pos)
-
-    local obj = minetest.add_entity(
-        vector.add(pos, {x = 0.5, y = 0.5, z = 0.5}),
-        CORE_ENTITY
-    )
-
-    if obj then
-        local ent = obj:get_luaentity()
-        if ent then
-            ent.core_pos = vector.new(pos)
-            ent.original_node = original_node
-        end
-        obj:set_properties({wield_item = original_node})
-    end
-end
-
-minetest.register_entity(CORE_ENTITY, {
-    initial_properties = {
-        physical = false,
-        collide_with_objects = false,
-        pointable = false,
-        visual = "wielditem",
-        visual_size = {x = 1, y = 1},
-        static_save = true,
-        textures = {"air.png"},
-    },
-
-    core_pos = nil,
-    original_node = "",
-
-    get_staticdata = function(self)
-        return minetest.serialize({
-            core_pos = self.core_pos,
-            original_node = self.original_node,
-        })
-    end,
-
-    on_activate = function(self, staticdata)
-        if staticdata and staticdata ~= "" then
-            local data = minetest.deserialize(staticdata)
-            if data then
-                self.core_pos = data.core_pos
-                self.original_node = data.original_node or ""
-                if self.original_node ~= "" then
-                    self.object:set_properties({wield_item = self.original_node})
-                end
-            end
-        end
-    end,
-})
-
-local function register_core_variant(building_type, x, y, z, minp, maxp)
+local function register_core_variant(building_type, x, y, z, minp, maxp, original_node)
     local key = core_key(x, y, z)
     CORE_VARIANTS[building_type] = CORE_VARIANTS[building_type] or {}
     if CORE_VARIANTS[building_type][key] then
@@ -210,10 +160,15 @@ local function register_core_variant(building_type, x, y, z, minp, maxp)
         maxp.z + 1 - z + 0.5
     }
 
+    local original_def = minetest.registered_nodes[original_node]
+    local tiles = original_def and original_def.tiles or {"default_dirt.png"}
+
     minetest.register_node(name, {
         description = "Серце будівлі",
-        drawtype = "airlike",
-        paramtype = "light",
+        drawtype = "normal",
+        tiles = tiles,
+        paramtype = original_def and original_def.paramtype or "light",
+        paramtype2 = original_def and original_def.paramtype2 or "none",
         sunlight_propagates = true,
         walkable = false,
         pointable = true,
@@ -229,7 +184,7 @@ local function register_core_variant(building_type, x, y, z, minp, maxp)
 
         selection_box = {
             type = "fixed",
-            fixed = minbox
+            fixed = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5}
         },
 
         on_construct = function(pos)
@@ -312,7 +267,7 @@ local function register_core_variants_for_building(building_type)
                         y = math.max(maxp.y, y),
                         z = math.max(maxp.z, z)
                     } or {x = x, y = y, z = z}
-                    table.insert(cells, {x = x, y = y, z = z})
+                    table.insert(cells, {x = x, y = y, z = z, node = cell.name})
                 end
             end
         end
@@ -323,7 +278,7 @@ local function register_core_variants_for_building(building_type)
     end
 
     for _, cell in ipairs(cells) do
-        register_core_variant(building_type, cell.x, cell.y, cell.z, minp, maxp)
+        register_core_variant(building_type, cell.x, cell.y, cell.z, minp, maxp, cell.node)
     end
 end
 
@@ -410,7 +365,7 @@ function human_fortress.set_core_data(pos, data)
     end
     meta:set_string("infotext", infotext)
 
-    add_core_visual(pos, data.original_node)
+    remove_core_visual(pos)
     return true
 end
 
@@ -576,16 +531,12 @@ for building_type in pairs(BUILDING_SCHEMATICS or {}) do
 end
 
 minetest.register_lbm({
-    name = "human_fortress:restore_core_visuals",
-    label = "Restore building core visuals",
+    name = "human_fortress:remove_old_core_visuals",
+    label = "Remove old building core visuals",
     nodenames = CORE_NODES,
     run_at_every_load = true,
-    action = function(pos, node)
-        local meta = minetest.get_meta(pos)
-        local original_node = meta:get_string("original_node")
-        if original_node ~= "" then
-            add_core_visual(pos, original_node)
-        end
+    action = function(pos)
+        remove_core_visual(pos)
     end,
 })
 
@@ -598,3 +549,7 @@ minetest.register_lbm({
         minetest.remove_node(pos)
     end,
 })
+
+minetest.register_on_leaveplayer(function(player)
+    opened_core_by_player[player:get_player_name()] = nil
+end)
