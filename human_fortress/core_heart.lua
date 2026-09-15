@@ -103,8 +103,15 @@ local function open_building_menu(player, pos)
     if BUILDING_MENUS and BUILDING_MENUS[data.building_type] then
         BUILDING_MENUS[data.building_type](player_name, pos, data)
     else
-        minetest.chat_send_player(player_name, "⚠️ Меню для цієї будівлі не знайдено.")
-        opened_core_by_player[player_name] = nil
+        minetest.show_formspec(
+            player_name,
+            "human_fortress:core_manage",
+            "formspec_version[4]size[6,3]" ..
+            "label[0.5,0.5;🏗️ Будівля: " .. minetest.formspec_escape(data.building_type) .. "]" ..
+            "label[0.5,1.1;Для цієї будівлі немає окремого меню.]" ..
+            "button[0.5,1.8;5,0.8;destroy_building;💥 ЗНИЩИТИ БУДІВЛЮ]" ..
+            "button[2,2.7;2,0.6;close;❌ ЗАКРИТИ]"
+        )
     end
 end
 
@@ -123,9 +130,9 @@ minetest.register_on_player_receive_fields(function(player, formname, fields)
             return true
         end
 
-        if fields.quit then
+        if fields.quit or fields.close then
             opened_core_by_player[player_name] = nil
-            return false
+            return true
         end
 
         return false
@@ -465,17 +472,17 @@ local function create_core_for_building(player_name, building_type, pos)
         return nil
     end
 
-    local target = blocks[math.random(1, #blocks)]
-    local core_pos = {x = target.x, y = target.y, z = target.z}
-    local node = minetest.get_node(core_pos)
-    local variant = CORE_VARIANTS[building_type] and CORE_VARIANTS[building_type][core_key(target.ox, target.oy, target.oz)]
+    local chosen = blocks[math.random(#blocks)]
+    local core_pos = {x = chosen.x, y = chosen.y, z = chosen.z}
 
-    if variant then
-        minetest.swap_node(core_pos, {name = variant, param1 = node.param1, param2 = node.param2})
-    else
-        minetest.swap_node(core_pos, {name = CORE_NODE, param1 = node.param1, param2 = node.param2})
+    local node = minetest.get_node(core_pos)
+    local core_node = CORE_VARIANTS[building_type] and CORE_VARIANTS[building_type][core_key(chosen.ox, chosen.oy, chosen.oz)]
+
+    if not core_node then
+        core_node = CORE_NODE
     end
 
+    minetest.set_node(core_pos, {name = core_node})
     human_fortress.set_core_data(core_pos, {
         owner = player_name,
         building_type = building_type,
@@ -493,22 +500,18 @@ local function create_core_for_building(player_name, building_type, pos)
 end
 
 local function wrap_building(building_type, building_data)
-    if not building_data or building_data.__core_wrapped then
+    if building_data._core_wrapped then
         return
     end
 
-    building_data.__core_wrapped = true
     local original_on_built = building_data.on_built
-
     building_data.on_built = function(player_name, pos, ...)
-        local result
         if original_on_built then
-            result = original_on_built(player_name, pos, ...)
+            original_on_built(player_name, pos, ...)
         end
-
-        create_core_for_building(player_name, building_type, pos)
-        return result
+        return create_core_for_building(player_name, building_type, pos)
     end
+    building_data._core_wrapped = true
 end
 
 for building_type, building_data in pairs(BUILDING_SCHEMATICS or {}) do
