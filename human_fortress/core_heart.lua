@@ -173,9 +173,9 @@ minetest.register_node(CORE_NODE, {
     drawtype = "airlike",
     paramtype = "light",
     sunlight_propagates = true,
-    walkable = true,
-    pointable = true,
-    diggable = true,
+    walkable = false,
+    pointable = false,
+    diggable = false,
     groups = {
         cracky = 1,
         level = 1,
@@ -186,7 +186,8 @@ minetest.register_node(CORE_NODE, {
     is_ground_content = false,
 
     selection_box = {
-        type = "regular"
+        type = "fixed",
+        fixed = {}
     },
 
     on_construct = function(pos)
