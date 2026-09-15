@@ -46,6 +46,42 @@ local function remove_core_visual(pos)
     end
 end
 
+local function destroy_building(player_name, core_pos)
+    local data = get_core_building(core_pos)
+
+    if data.owner ~= "" and data.owner ~= player_name then
+        minetest.chat_send_player(player_name, "❌ Це чужа будівля!")
+        return false
+    end
+
+    if not data.min or not data.max then
+        minetest.chat_send_player(player_name, "❌ Не знайдено межі будівлі!")
+        return false
+    end
+
+    for x = data.min.x, data.max.x do
+        for y = data.min.y, data.max.y do
+            for z = data.min.z, data.max.z do
+                minetest.remove_node({x = x, y = y, z = z})
+            end
+        end
+    end
+
+    remove_core_visual(core_pos)
+
+    if human_fortress.buildings and human_fortress.buildings[player_name] then
+        for i = #human_fortress.buildings[player_name], 1, -1 do
+            local b = human_fortress.buildings[player_name][i]
+            if b.type == data.building_type and b.pos and vector.equals(b.pos, data.building_pos) then
+                table.remove(human_fortress.buildings[player_name], i)
+            end
+        end
+    end
+
+    minetest.chat_send_player(player_name, "💥 Будівлю знищено!")
+    return true
+end
+
 local function open_building_menu(player, pos)
     local data = get_core_building(pos)
     local player_name = player:get_player_name()
@@ -60,22 +96,45 @@ local function open_building_menu(player, pos)
         return
     end
 
-    if BUILDING_MENUS and BUILDING_MENUS[data.building_type] then
-        BUILDING_MENUS[data.building_type](player_name, pos, data)
-        return
+    local formspec =
+        "formspec_version[4]" ..
+        "size[8,5.5]" ..
+        "label[0.5,0.5;🏗️ " .. minetest.formspec_escape(data.building_type) .. "]" ..
+        "label[0.5,1.1;Власник: " .. minetest.formspec_escape(data.owner) .. "]" ..
+        "button[0.8,2;6.4,1;open_building_menu;🏠 ВІДКРИТИ МЕНЮ БУДІВЛІ]" ..
+        "button[0.8,3.3;6.4,1;destroy_building;💥 ЗНИЩИТИ БУДІВЛЮ]" ..
+        "button_exit[2.5,4.5;3,0.7;close;❌ ЗАКРИТИ]"
+
+    minetest.show_formspec(player_name, "human_fortress:core_manage", formspec)
+end
+
+minetest.register_on_player_receive_fields(function(player, formname, fields)
+    if formname ~= "human_fortress:core_manage" then
+        return false
     end
 
-    minetest.show_formspec(
-        player_name,
-        "human_fortress:core_heart",
-        "formspec_version[4]" ..
-        "size[8,6]" ..
-        "label[0.5,0.5;🏗️ Будівля]" ..
-        "label[0.5,1.1;Тип: " .. minetest.formspec_escape(data.building_type) .. "]" ..
-        "label[0.5,1.6;Власник: " .. minetest.formspec_escape(data.owner) .. "]" ..
-        "button_exit[2,4.5;4,1;close;Закрити]"
-    )
-end
+    local player_name = player:get_player_name()
+    local core_pos = human_fortress.find_building_core and human_fortress.find_building_core(player:get_pos(), 50)
+
+    if fields.destroy_building then
+        if core_pos then
+            destroy_building(player_name, core_pos)
+        else
+            minetest.chat_send_player(player_name, "❌ Серце будівлі не знайдено!")
+        end
+        return true
+    end
+
+    if fields.open_building_menu and core_pos then
+        local data = get_core_building(core_pos)
+        if BUILDING_MENUS and BUILDING_MENUS[data.building_type] then
+            BUILDING_MENUS[data.building_type](player_name, core_pos, data)
+        end
+        return true
+    end
+
+    return false
+end)
 
 local function add_core_visual(pos, original_node)
     if not original_node or original_node == "" or original_node == "air" then
