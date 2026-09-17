@@ -1,3 +1,5 @@
+dofile(minetest.get_modpath("human_fortress") .. "/building_health.lua")
+
 -- ============================================
 -- БУДІВЛЯ: РАТУША (townhall.lua)
 -- ============================================
