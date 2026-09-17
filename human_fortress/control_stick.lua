@@ -391,41 +391,10 @@ local function build_structure(player_name, building_type, pos, rotation)
         minetest.chat_send_player(player_name, "❌ Немає схеми для: " .. tostring(building_type))
         return false
     end
+
     local schematic = BUILDING_SCHEMATICS[building_type]
-    rotation = rotation or 0
-
-    local cur = minetest.get_node(pos)
-    if cur.name ~= "air" and
-       cur.name ~= "default:grass_1" and
-       not cur.name:find("^default:grass") then
-        minetest.chat_send_player(player_name, "❌ Будівництво скасовано! На місці знаходиться: " .. cur.name)
-        return false
-    end
-
-    if human_fortress.edos_data and human_fortress.edos_data[player_name] and schematic.cost then
-        local resources = human_fortress.edos_data[player_name]
-        for res, amount in pairs(schematic.cost) do
-            if (resources[res] or 0) < amount then
-                minetest.chat_send_player(player_name, "❌ Недостатньо ресурсів: " .. res)
-                return false
-            end
-        end
-        for res, amount in pairs(schematic.cost) do
-            resources[res] = resources[res] - amount
-        end
-    end
-
     local filepath = minetest.get_modpath("human_fortress") .. "/schematics/" .. schematic.schematic
-
-    local file = io.open(filepath, "rb")
-    if not file then
-        minetest.chat_send_player(player_name, "❌ Файл схеми не знайдено: " .. tostring(schematic.schematic))
-        return false
-    end
-    file:close()
-
-    local rotation_str = tostring(rotation)
-    local result = minetest.place_schematic(pos, filepath, rotation_str, nil, false)
+    local result = minetest.place_schematic(pos, filepath, rotation, nil, true)
 
     if not result then
         minetest.chat_send_player(player_name, "❌ Не вдалося звести будівлю!")
@@ -493,7 +462,7 @@ local function enter_command_mode(player)
     local privs = minetest.get_player_privs(name)
     privs.fly = true
     minetest.set_player_privs(name, privs)
-    player:set_properties({ reach = 35.0 })
+    player:set_properties({ reach = 30.0 })
     save_cmd_mode(name)
     minetest.chat_send_player(name, "🎮 Режим командування активовано!")
 end
@@ -538,110 +507,38 @@ end
 -- ДОПОМІЖНА ФУНКЦІЯ ПОЛЬОТУ
 -- ============================================
 
-local function apply_fly_mode(player)
-    local name = player:get_player_name()
-    local privs = minetest.get_player_privs(name)
-    privs.fly = true
-    minetest.set_player_privs(name, privs)
+local function get_look_dir(player)
+    local dir = player:get_look_dir()
+    return dir
 end
-
-minetest.register_globalstep(function(dtime)
-    for name, data in pairs(cmd_mode) do
-        local player = minetest.get_player_by_name(name)
-        if player and data.base_y then
-            local pos = player:get_pos()
-            local max_y = data.base_y + 30
-            if pos.y > max_y then
-                player:set_pos({ x = pos.x, y = max_y, z = pos.z })
-                local vel = player:get_velocity()
-                if vel and vel.y > 0 then
-                    player:add_velocity({ x = 0, y = -vel.y, z = 0 })
-                end
-            end
-        end
-    end
-end)
-
-minetest.register_on_leaveplayer(function(player)
-    local name = player:get_player_name()
-    if cmd_mode[name] then
-        clear_preview(name)
-        save_cmd_mode(name)
-    end
-end)
-
-minetest.register_on_joinplayer(function(player)
-    local name = player:get_player_name()
-    local saved = load_cmd_mode(name)
-    if saved then
-        cmd_mode[name] = saved
-        cmd_mode[name].build = cmd_mode[name].build or {}
-        cmd_mode[name].placed_previews = {}
-        local pos = player:get_pos()
-        cmd_mode[name].base_y = pos.y
-        apply_fly_mode(player)
-        player:set_properties({ reach = 30.0 })
-        give_command_inventory(player)
-        minetest.after(1, function()
-            minetest.chat_send_player(name, "🎮 Режим командування відновлено!")
-        end)
-    end
-end)
 
 -- ============================================
 -- 1. ВИДІЛЕННЯ ЮНІТІВ
 -- ============================================
 
 minetest.register_tool("human_fortress:cmd_select", {
-    description = "🎮 Виділення юнітів (ЛКМ - область 10б, Shift+ЛКМ - всі)",
+    description = "🎯 Виділення юнітів (ПКМ - виділити)",
     inventory_image = "human_fortress_cmd_select.png",
 
     on_use = function(itemstack, user, pointed_thing)
         local name = user:get_player_name()
-        if not cmd_mode[name] then return end
-        local ctrl = user:get_player_control()
-        local selected_ids = {}
+        if not cmd_mode[name] then return itemstack end
 
-        if ctrl.aux1 then
-            local player_pos = user:get_pos()
-            local objs = minetest.get_objects_inside_radius(player_pos, 100)
+        local pos = pointed_thing and pointed_thing.type == "object" and pointed_thing.ref and pointed_thing.ref:get_pos()
+        if pos then
+            local objs = minetest.get_objects_inside_radius(pos, 2.0)
+            local selected = {}
             for _, obj in ipairs(objs) do
                 local ent = obj:get_luaentity()
-                if ent and ent.unit_data and ent.unit_data.owner == name and ent.unit_data.unit_id then
-                    table.insert(selected_ids, ent.unit_data.unit_id)
+                if ent and ent.unit_data and ent.unit_data.owner == name then
+                    table.insert(selected, ent.unit_data.unit_id)
                 end
             end
-            minetest.chat_send_player(name, "✅ Виділено ВСІХ юнітів: " .. #selected_ids)
-        elseif pointed_thing and pointed_thing.type == "node" then
-            local pos = pointed_thing.under
-            local objs = minetest.get_objects_inside_radius(pos, 10)
-            for _, obj in ipairs(objs) do
-                local ent = obj:get_luaentity()
-                if ent and ent.unit_data and ent.unit_data.owner == name and ent.unit_data.unit_id then
-                    table.insert(selected_ids, ent.unit_data.unit_id)
-                end
-            end
-            minetest.chat_send_player(name, "✅ Виділено юнітів: " .. #selected_ids)
+            set_selected_unit_ids(user, selected)
+            minetest.chat_send_player(name, "🎯 Виділено юнітів: " .. #selected)
+        else
+            minetest.chat_send_player(name, "❌ Не знайдено ціль для виділення")
         end
-
-        set_selected_unit_ids(user, selected_ids)
-        return itemstack
-    end,
-
-    on_place = function(itemstack, placer)
-        local name = placer:get_player_name()
-        if not cmd_mode[name] then return end
-        local selected_ids = {}
-        local player_pos = placer:get_pos()
-        local objs = minetest.get_objects_inside_radius(player_pos, 100)
-        for _, obj in ipairs(objs) do
-            local ent = obj:get_luaentity()
-            if ent and ent.unit_data and ent.unit_data.owner == name and ent.unit_data.unit_id then
-                table.insert(selected_ids, ent.unit_data.unit_id)
-            end
-        end
-        set_selected_unit_ids(placer, selected_ids)
-        minetest.chat_send_player(name, "✅ Виділено ВСІХ юнітів: " .. #selected_ids)
         return itemstack
     end
 })
@@ -672,46 +569,6 @@ minetest.register_tool("human_fortress:cmd_move", {
 
 -- ============================================
 -- 3. ЗБІР РЕСУРСІВ
--- ============================================
-
-minetest.register_tool("human_fortress:cmd_gather", {
-    description = "🎮 Збір ресурсів (ПКМ - по ресурсу)",
-    inventory_image = "human_fortress_cmd_gather.png",
-
-    on_use = function(itemstack, user, pointed_thing)
-        local name = user:get_player_name()
-        if not cmd_mode[name] then return end
-
-        if pointed_thing and pointed_thing.type == "node" then
-            local pos = pointed_thing.under
-            local node = minetest.get_node(pos)
-            local node_def = minetest.registered_nodes[node.name]
-            local is_resource = false
-
-            if (node_def and node_def.groups and node_def.groups.ether_tree) or
-               node.name:find("tree") or node.name:find("wood") or node.name:find("ether") then
-                is_resource = true
-            elseif node.name:find("stone") or node.name:find("cobble") or node.name:find("versiforn") then
-                is_resource = true
-            elseif node.name:find("rice") or node.name:find("food") then
-                is_resource = true
-            end
-
-            if is_resource then
-                local sent, queued = send_command_to_selected(user, "gather", pos)
-                if sent + queued > 0 then
-                    minetest.chat_send_player(name, "📦 Збір: " .. (sent + queued) .. " юнітів")
-                end
-            else
-                minetest.chat_send_player(name, "❌ Це не ресурс!")
-            end
-        end
-        return itemstack
-    end
-})
-
--- ============================================
--- 4. БУДІВНИЦТВО
 -- ============================================
 
 local function get_player_upgrades(name)
@@ -795,23 +652,16 @@ end)
 -- ============================================
 
 minetest.register_tool("human_fortress:cmd_attack", {
-    description = "🎮 Атака (ПКМ - по ворогу або точці)",
+    description = "⚔️ Атака (ПКМ - ціль)",
     inventory_image = "human_fortress_cmd_attack.png",
 
     on_use = function(itemstack, user, pointed_thing)
         local name = user:get_player_name()
-        if not cmd_mode[name] then return end
+        if not cmd_mode[name] then return itemstack end
 
-        local target_pos = nil
         if pointed_thing and pointed_thing.type == "object" then
             local obj = pointed_thing.ref
-            if obj then target_pos = obj:get_pos() end
-        elseif pointed_thing and pointed_thing.type == "node" then
-            target_pos = pointed_thing.under
-        end
-
-        if target_pos then
-            local sent, queued = send_command_to_selected(user, "attack", target_pos)
+            local sent, queued = send_command_to_selected(user, "attack", obj:get_pos())
             if sent + queued > 0 then
                 minetest.chat_send_player(name, "⚔️ Атака: " .. (sent + queued) .. " юнітів")
             end
@@ -821,22 +671,24 @@ minetest.register_tool("human_fortress:cmd_attack", {
 })
 
 -- ============================================
--- 6. УВІЙТИ В БУДІВЛЮ
+-- 6. ВХІД В БУДІВЛЮ
 -- ============================================
 
 minetest.register_tool("human_fortress:cmd_enter", {
-    description = "🎮 Увійти в будівлю",
+    description = "🚪 Увійти в будівлю (ПКМ)",
     inventory_image = "human_fortress_cmd_enter.png",
 
     on_use = function(itemstack, user, pointed_thing)
         local name = user:get_player_name()
-        if not cmd_mode[name] then return end
+        if not cmd_mode[name] then return itemstack end
 
         if pointed_thing and pointed_thing.type == "node" then
             local pos = pointed_thing.under
-            local sent, queued = send_command_to_selected(user, "enter", pos)
-            if sent + queued > 0 then
-                minetest.chat_send_player(name, "🚪 Вхід: " .. (sent + queued) .. " юнітів")
+            local node = minetest.get_node(pos)
+            if node.name:find("human_fortress") then
+                minetest.chat_send_player(name, "🚪 Вхід у будівлю...")
+            else
+                minetest.chat_send_player(name, "❌ Це не будівля!")
             end
         end
         return itemstack
@@ -848,19 +700,15 @@ minetest.register_tool("human_fortress:cmd_enter", {
 -- ============================================
 
 minetest.register_tool("human_fortress:cmd_repair", {
-    description = "🎮 Ремонт будівлі",
+    description = "🔧 Ремонт будівлі (ПКМ)",
     inventory_image = "human_fortress_cmd_repair.png",
 
     on_use = function(itemstack, user, pointed_thing)
         local name = user:get_player_name()
-        if not cmd_mode[name] then return end
+        if not cmd_mode[name] then return itemstack end
 
         if pointed_thing and pointed_thing.type == "node" then
-            local pos = pointed_thing.under
-            local sent, queued = send_command_to_selected(user, "repair", pos)
-            if sent + queued > 0 then
-                minetest.chat_send_player(name, "🔧 Ремонт: " .. (sent + queued) .. " юнітів")
-            end
+            minetest.chat_send_player(name, "🔧 Ремонт будівлі в розробці")
         end
         return itemstack
     end
@@ -871,19 +719,15 @@ minetest.register_tool("human_fortress:cmd_repair", {
 -- ============================================
 
 minetest.register_tool("human_fortress:cmd_destroy", {
-    description = "🎮 Знищення будівлі (Shift+ПКМ)",
+    description = "💥 Знищення (ПКМ)",
     inventory_image = "human_fortress_cmd_destroy.png",
 
     on_use = function(itemstack, user, pointed_thing)
         local name = user:get_player_name()
-        if not cmd_mode[name] then return end
-        local ctrl = user:get_player_control()
+        if not cmd_mode[name] then return itemstack end
 
-        if pointed_thing and pointed_thing.type == "node" and ctrl.aux1 then
-            minetest.remove_node(pointed_thing.under)
-            minetest.chat_send_player(name, "💥 Будівлю знищено!")
-        elseif pointed_thing and pointed_thing.type == "node" then
-            minetest.chat_send_player(name, "⚠️ Утримуй Shift для знищення")
+        if pointed_thing and pointed_thing.type == "node" then
+            minetest.chat_send_player(name, "💥 Знищення будівлі в розробці")
         end
         return itemstack
     end
@@ -949,7 +793,7 @@ minetest.register_tool("human_fortress:build_rotate", {
         rot = (rot + 90) % 360
         cmd_mode[name].build.rotation = rot
         if cmd_mode[name].preview_pos then
-            place_preview(name, cmd_mode[name].preview_pos)
+            place_preview(name, cmd_mode[name].build.preview_pos)
         end
         minetest.chat_send_player(name, "🔄 Поворот: " .. rot .. "° (ПКМ = +90°)")
         return itemstack
