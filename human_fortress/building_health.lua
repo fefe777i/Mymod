@@ -68,7 +68,7 @@ local function update_bar(core_pos, hp, max_hp, top_pos)
             return
         end
 
-        entry = {bg = bg, load = load}
+        entry = {bg = bg, load = load, pos = vector.new(core_pos)}
         bars[key] = entry
     end
 
@@ -299,16 +299,10 @@ minetest.register_globalstep(function(dtime)
     end
 
     for key, entry in pairs(bars) do
-        local x, y, z = key:match("(-?[%d%.]+),(-?[%d%.]+),(-?[%d%.]+)")
-        local pos
-        if x and y and z then
-            pos = {x = tonumber(x), y = tonumber(y), z = tonumber(z)}
-        end
-
-        if pos and not seen[key] then
-            local node_name = minetest.get_node(pos).name
+        if entry.pos and not seen[key] then
+            local node_name = minetest.get_node(entry.pos).name
             if not node_name:find("^human_fortress:core_heart") then
-                remove_bar(pos)
+                remove_bar(entry.pos)
             end
         end
     end
