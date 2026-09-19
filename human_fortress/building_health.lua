@@ -229,13 +229,12 @@ minetest.register_globalstep(function(dtime)
     if scan_timer < 1 then return end
     scan_timer = 0
 
-    for _, player in ipairs(minetest.get_connected_players()) do
-        local pos = player:get_pos()
-        local minp = {x = pos.x - 35, y = pos.y - 35, z = pos.z - 35}
-        local maxp = {x = pos.x + 35, y = pos.y + 35, z = pos.z + 35}
-        local nodes = minetest.find_nodes_in_area(minp, maxp, {"group:building_core"})
+    local players = minetest.get_connected_players()
 
-        for _, core_pos in ipairs(nodes) do
+    for _, player in ipairs(players) do
+        local pos = player:get_pos()
+
+        for _, core_pos in pairs(known_cores) do
             if vector.distance(pos, core_pos) <= 35 then
                 local data, hp, max_hp = get_health_data(core_pos)
                 if data and data.min and data.max then
@@ -249,4 +248,4 @@ minetest.register_globalstep(function(dtime)
             end
         end
     end
-end)
+end)\n
