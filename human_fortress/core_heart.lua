@@ -6,6 +6,7 @@ local CORE_NODES = {CORE_NODE}
 local CORE_NODE_SET = {[CORE_NODE] = true}
 local CORE_VARIANTS = {}
 local opened_core_by_player = {}
+local known_cores = {}
 
 local function core_key(x, y, z)
     return x .. "_" .. y .. "_" .. z
@@ -220,6 +221,7 @@ local function register_core_variant(building_type, x, y, z, minp, maxp, origina
             end
         end,
         on_destruct = function(pos)
+            known_cores[minetest.pos_to_string(pos)] = nil
             remove_core_visual(pos)
         end,
     })
@@ -335,6 +337,7 @@ minetest.register_node(CORE_NODE, {
         end
     end,
     on_destruct = function(pos)
+        known_cores[minetest.pos_to_string(pos)] = nil
         remove_core_visual(pos)
     end,
 })
@@ -343,6 +346,8 @@ function human_fortress.set_core_data(pos, data)
     if not is_core_node(minetest.get_node(pos).name) then
         return false
     end
+
+    known_cores[minetest.pos_to_string(pos)] = vector.new(pos)
 
     local meta = minetest.get_meta(pos)
     meta:set_string("owner", data.owner or "")
@@ -380,20 +385,19 @@ end
 function human_fortress.find_building_core(pos, radius)
     radius = radius or 50
 
-    local cores = minetest.find_nodes_in_area(
-        {x = pos.x - radius, y = pos.y - radius, z = pos.z - radius},
-        {x = pos.x + radius, y = pos.y + radius, z = pos.z + radius},
-        CORE_NODES
-    )
-
     local closest
     local closest_distance = math.huge
 
-    for _, core_pos in ipairs(cores) do
-        local distance = vector.distance(pos, core_pos)
-        if distance < closest_distance then
-            closest_distance = distance
-            closest = core_pos
+    for key, core_pos in pairs(known_cores) do
+        local node_name = minetest.get_node(core_pos).name
+        if CORE_NODE_SET[node_name] then
+            local distance = vector.distance(pos, core_pos)
+            if distance <= radius and distance < closest_distance then
+                closest_distance = distance
+                closest = core_pos
+            end
+        else
+            known_cores[key] = nil
         end
     end
 
@@ -523,6 +527,7 @@ minetest.register_lbm({
     nodenames = CORE_NODES,
     run_at_every_load = true,
     action = function(pos)
+        known_cores[minetest.pos_to_string(pos)] = vector.new(pos)
         remove_core_visual(pos)
     end,
 })
