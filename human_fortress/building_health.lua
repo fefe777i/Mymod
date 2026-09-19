@@ -4,118 +4,37 @@ local HEALTH_DAMAGE_AMOUNT = 3
 local HEALTH_SEARCH_RADIUS = 40
 local HEALTH_ATTACK_RADIUS = 10
 
-local bars = {}
+local particle_cache = {}
 
 local function core_key(pos)
     return minetest.pos_to_string(pos)
 end
 
-local function get_health_data(core_pos)
-    if not core_pos or not human_fortress.get_core_data then
-        return nil
+local function get_health_texture(hp, max_hp)
+    local percent = math.floor((hp / math.max(1, max_hp)) * 100 + 0.5)
+    local cached = particle_cache[percent]
+    if cached then
+        return cached
     end
 
-    local data = human_fortress.get_core_data(core_pos)
-    if not data or data.building_type == "" then
-        return nil
-    end
-
-    local meta = minetest.get_meta(core_pos)
-    local max_hp = meta:get_int("building_max_hp")
-    local hp = meta:get_int("building_hp")
-
-    if max_hp <= 0 then
-        local schematic = BUILDING_SCHEMATICS and BUILDING_SCHEMATICS[data.building_type]
-        max_hp = (schematic and (schematic.health or schematic.max_hp)) or HEALTH_DEFAULT
-        meta:set_int("building_max_hp", max_hp)
-    end
-
-    if hp <= 0 or hp > max_hp then
-        hp = max_hp
-        meta:set_int("building_hp", hp)
-    end
-
-    return data, hp, max_hp
+    cached = "health_bd.png^[transformR90^[lowpart:" .. percent .. ":health_load.png\\^[transformR90^[transformR270"
+    particle_cache[percent] = cached
+    return cached
 end
 
-local function remove_bar(core_pos)
-    local key = core_key(core_pos)
-    local entry = bars[key]
-    if not entry then return end
-
-    if entry.bg and entry.bg:get_pos() then
-        entry.bg:remove()
-    end
-    if entry.load and entry.load:get_pos() then
-        entry.load:remove()
-    end
-
-    bars[key] = nil
-end
-
-local function update_bar(core_pos, hp, max_hp, top_pos)
-    local key = core_key(core_pos)
-    local entry = bars[key]
-
-    if not entry or not entry.bg or not entry.bg:get_pos() or not entry.load or not entry.load:get_pos() then
-        remove_bar(core_pos)
-
-        local bg = minetest.add_entity(top_pos, "human_fortress:building_health_bg")
-        local load = minetest.add_entity(top_pos, "human_fortress:building_health_load")
-        if not bg or not load then
-            if bg then bg:remove() end
-            if load then load:remove() end
-            return
-        end
-
-        entry = {bg = bg, load = load, pos = vector.new(core_pos)}
-        bars[key] = entry
-    end
-
-    local ratio = math.max(0, math.min(1, hp / math.max(1, max_hp)))
-    local width = 3
-    local height = 0.35
-
-    entry.bg:set_pos(top_pos)
-    entry.bg:set_properties({
-        visual_size = {x = width, y = height}
-    })
-
-    local left_x = top_pos.x - width / 2
-    local load_width = width * ratio
-    local load_pos = {
-        x = left_x + load_width / 2,
-        y = top_pos.y,
-        z = top_pos.z
-    }
-
-    entry.load:set_pos(load_pos)
-    entry.load:set_properties({
-        visual_size = {x = math.max(0.001, load_width), y = height}
+local function show_health_particle(player, core_pos, hp, max_hp, top_pos)
+    minetest.add_particle({
+        pos = top_pos,
+        velocity = {x = 0, y = 0, z = 0},
+        acceleration = {x = 0, y = 0, z = 0},
+        expirationtime = 1.2,
+        size = 3,
+        collisiondetection = false,
+        vertical = false,
+        texture = get_health_texture(hp, max_hp),
+        playername = player:get_player_name(),
     })
 end
-
-minetest.register_entity("human_fortress:building_health_bg", {
-    initial_properties = {
-        visual = "sprite",
-        textures = {"health_bd.png"},
-        visual_size = {x = 3, y = 0.35},
-        physical = false,
-        pointable = false,
-        static_save = false,
-    },
-})
-
-minetest.register_entity("human_fortress:building_health_load", {
-    initial_properties = {
-        visual = "sprite",
-        textures = {"health_load.png"},
-        visual_size = {x = 3, y = 0.35},
-        physical = false,
-        pointable = false,
-        static_save = false,
-    },
-})
 
 function human_fortress.set_building_hp(core_pos, hp)
     local data, _, max_hp = get_health_data(core_pos)
@@ -279,30 +198,23 @@ minetest.register_globalstep(function(dtime)
     if scan_timer < 1 then return end
     scan_timer = 0
 
-    local seen = {}
-
     for _, player in ipairs(minetest.get_connected_players()) do
         local pos = player:get_pos()
-        local minp = {x = pos.x - 80, y = pos.y - 80, z = pos.z - 80}
-        local maxp = {x = pos.x + 80, y = pos.y + 80, z = pos.z + 80}
+        local minp = {x = pos.x - 35, y = pos.y - 35, z = pos.z - 35}
+        local maxp = {x = pos.x + 35, y = pos.y + 35, z = pos.z + 35}
         local nodes = minetest.find_nodes_in_area(minp, maxp, {"group:building_core"})
 
         for _, core_pos in ipairs(nodes) do
-            local data, hp, max_hp = get_health_data(core_pos)
-            if data and data.min and data.max then
-                local top_y = data.max.y + 1.8
-                local top_pos = {x = (data.min.x + data.max.x) / 2 + 0.5, y = top_y, z = (data.min.z + data.max.z) / 2 + 0.5}
-                update_bar(core_pos, hp, max_hp, top_pos)
-                seen[core_key(core_pos)] = true
-            end
-        end
-    end
-
-    for key, entry in pairs(bars) do
-        if entry.pos and not seen[key] then
-            local node_name = minetest.get_node(entry.pos).name
-            if not node_name:find("^human_fortress:core_heart") then
-                remove_bar(entry.pos)
+            if vector.distance(pos, core_pos) <= 35 then
+                local data, hp, max_hp = get_health_data(core_pos)
+                if data and data.min and data.max then
+                    local top_pos = {
+                        x = (data.min.x + data.max.x) / 2 + 0.5,
+                        y = data.max.y + 1.8,
+                        z = (data.min.z + data.max.z) / 2 + 0.5
+                    }
+                    show_health_particle(player, core_pos, hp, max_hp, top_pos)
+                end
             end
         end
     end
