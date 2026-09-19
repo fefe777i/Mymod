@@ -10,6 +10,37 @@ local function core_key(pos)
     return minetest.pos_to_string(pos)
 end
 
+local function get_health_data(core_pos)
+    if not core_pos or not human_fortress.get_core_data then
+        return nil
+    end
+
+    local data = human_fortress.get_core_data(core_pos)
+    if not data or data.building_type == "" then
+        return nil
+    end
+
+    local meta = minetest.get_meta(core_pos)
+    local max_hp = meta:get_int("building_max_hp")
+    local hp = meta:get_int("building_hp")
+
+    if max_hp <= 0 then
+        local schematic = BUILDING_SCHEMATICS and BUILDING_SCHEMATICS[data.building_type]
+        max_hp = (schematic and (schematic.health or schematic.max_hp)) or HEALTH_DEFAULT
+        meta:set_int("building_max_hp", max_hp)
+    end
+
+    if hp <= 0 or hp > max_hp then
+        hp = max_hp
+        meta:set_int("building_hp", hp)
+    end
+
+    return data, hp, max_hp
+end
+
+local function remove_bar(core_pos)
+end
+
 local function get_health_texture(hp, max_hp)
     local percent = math.floor((hp / math.max(1, max_hp)) * 100 + 0.5)
     local cached = particle_cache[percent]
