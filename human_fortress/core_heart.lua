@@ -7,6 +7,7 @@ local CORE_NODE_SET = {[CORE_NODE] = true}
 local CORE_VARIANTS = {}
 local opened_core_by_player = {}
 local known_cores = {}
+human_fortress.known_cores = known_cores
 
 local function core_key(x, y, z)
     return x .. "_" .. y .. "_" .. z
