@@ -234,7 +234,7 @@ minetest.register_globalstep(function(dtime)
     for _, player in ipairs(players) do
         local pos = player:get_pos()
 
-        for _, core_pos in pairs(known_cores) do
+        for _, core_pos in pairs(human_fortress.known_cores or {}) do
             if vector.distance(pos, core_pos) <= 35 then
                 local data, hp, max_hp = get_health_data(core_pos)
                 if data and data.min and data.max then
